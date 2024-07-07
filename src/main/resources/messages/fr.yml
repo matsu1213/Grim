@@ -1,3 +1,5 @@
+# Vous pouvez également utiliser des codes hexadécimaux, au format #FFFFFF ou #ffffff.
+
 # \u00BB se traduit par » (double >>). Les interprétations diffèrent entre les normes ANSI et UTF-8... vous pouvez même voir ? en raison de cela
 prefix: "&bGrim &8\u00BB"
 
@@ -19,6 +21,7 @@ upload-log-upload-failure: "%prefix% &cUne erreur est survenue lors du téléver
 # %prefix%
 # %player%
 # %check_name%
+# %description%
 # %experimental%
 # %vl% - violations
 # %verbose% - Informations supplémentaires sur les vérifivations comme les écarts, toutes les vérifications n'ajoutent pas d'information

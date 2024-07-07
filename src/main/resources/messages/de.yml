@@ -1,3 +1,5 @@
+# Sie können auch Hexadezimalcodes im Format #FFFFFF oder #ffffff verwenden.
+
 # \u00BB ist " (double >>), ANSI und UTF-8 interpretieren dies unterschiedlich... dadurch kann sogar ? angezeigt werden
 prefix: "&bGrim &8\u00BB"
 
@@ -19,6 +21,7 @@ upload-log-upload-failure: "%prefix% &cBeim Hochladen dieses Protokolls ist etwa
 # %prefix%
 # %player%
 # %check_name%
+# %description%
 # %experimental%
 # %vl% - Verstöße
 # %verbose% - zusätzliche Informationen aus dem Check wie z.B. Offsets, nicht alle Checks fügen Informationen hinzu

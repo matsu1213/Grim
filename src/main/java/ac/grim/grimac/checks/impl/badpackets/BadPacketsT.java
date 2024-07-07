@@ -21,9 +21,9 @@ public class BadPacketsT extends Check implements PacketCheck {
     // https://github.com/GrimAnticheat/Grim/pull/1274#issuecomment-1872458702
     // https://github.com/GrimAnticheat/Grim/pull/1274#issuecomment-1872533497
     private final boolean hasLegacyExpansion = player.getClientVersion().isOlderThan(ClientVersion.V_1_9);
-    private final double maxXZ = 0.3001 + (hasLegacyExpansion ? 0.1 : 0);
-    private final double minY = -0.0001 - (hasLegacyExpansion ? 0.1 : 0);
-    private final double maxY = 1.8001 + (hasLegacyExpansion ? 0.1 : 0);
+    private final double maxHorizontalDisplacement = 0.3001 + (hasLegacyExpansion ? 0.1 : 0);
+    private final double minVerticalDisplacement = -0.0001 - (hasLegacyExpansion ? 0.1 : 0);
+    private final double maxVerticalDisplacement = 1.8001 + (hasLegacyExpansion ? 0.1 : 0);
 
     @Override
     public void onPacketReceive(final PacketReceiveEvent event) {
@@ -36,21 +36,25 @@ public class BadPacketsT extends Check implements PacketCheck {
                 if (packetEntity == null) {
                     return;
                 }
+
                 // Make sure our target entity is actually a player (Player NPCs work too)
                 if (!EntityTypes.PLAYER.equals(packetEntity.getType())) {
                     // We can't check for any entity that is not a player
                     return;
                 }
+
                 // Perform the interaction vector check
                 // TODO:
                 //  27/12/2023 - Dynamic values for more than just one entity type?
                 //  28/12/2023 - Player-only is fine
                 //  30/12/2023 - Expansions differ in 1.9+
-                if (targetVector.y > minY && targetVector.y < maxY
-                        && Math.abs(targetVector.x) < maxXZ
-                        && Math.abs(targetVector.z) < maxXZ) {
+                final float scale = packetEntity.scale;
+                if (targetVector.y > (minVerticalDisplacement * scale) && targetVector.y < (maxVerticalDisplacement * scale)
+                        && Math.abs(targetVector.x) < (maxHorizontalDisplacement * scale)
+                        && Math.abs(targetVector.z) < (maxHorizontalDisplacement * scale)) {
                     return;
                 }
+
                 // Log the vector
                 final String verbose = String.format("%.5f/%.5f/%.5f",
                         targetVector.x, targetVector.y, targetVector.z);

@@ -1,3 +1,5 @@
+# 您也可以使用十六进制代码，格式为 #FFFFFF 或 #ffffff。
+
 # \u00BB is » (double >>), ANSI and UTF-8 interpret this differently... you may even see ? due to this
 prefix: "&bGrim &8\u00BB"
 
@@ -19,6 +21,7 @@ upload-log-upload-failure: "%prefix% &c上载此日志时出错, 有关详细信
 # %prefix% - 前缀
 # %player% - 玩家
 # %check_name% - 检查名字
+# %description%
 # %experimental%
 # %vl% - VL值
 # %verbose% - 检查中的额外信息，例如偏移量，并非所有检查都会添加信息

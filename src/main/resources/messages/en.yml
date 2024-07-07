@@ -1,3 +1,5 @@
+# You can use hex codes too, in the format #FFFFFF or #ffffff.
+
 # \u00BB is » (double >>), ANSI and UTF-8 interpret this differently... you may even see ? due to this
 prefix: "&bGrim &8\u00BB"
 
@@ -19,6 +21,7 @@ upload-log-upload-failure: "%prefix% &cSomething went wrong while uploading this
 # %prefix%
 # %player%
 # %check_name%
+# %description%
 # %experimental%
 # %vl% - violations
 # %verbose% - extra information from the check such as offsets, not all checks will add information
