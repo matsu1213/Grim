@@ -1,4 +1,5 @@
 # %check_name% - nombre de la comprobación
+# %description% - description of the check
 # %vl% - violaciones
 # %verbose% - informacion extra
 # %player% - nombre del jugador
@@ -72,6 +73,7 @@ Punishments:
       - "Place"
       - "Baritone"
       - "FastBreak"
+      - "TransactionOrder"
     commands:
       - "10:5 [alert]"
       - "20:10 [webhook]"
