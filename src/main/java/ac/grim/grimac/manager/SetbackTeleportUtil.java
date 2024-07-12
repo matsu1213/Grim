@@ -281,7 +281,7 @@ public class SetbackTeleportUtil extends Check implements PostPredictionCheck {
 
             // There seems to be a version difference in teleports past 30 million... just clamp the vector
             Vector3d clamped = VectorUtils.clampVector(new Vector3d(trueTeleportX, trueTeleportY, trueTeleportZ));
-            VectorData vector = new VectorData(new Vector(teleportPos.getLocation().getX(), teleportPos.getLocation().getY(), teleportPos.getLocation().getZ()), VectorData.VectorType.ZeroPointZeroThree))
+            VectorData vector = new VectorData(new Vector(teleportPos.getLocation().getX(), teleportPos.getLocation().getY(), teleportPos.getLocation().getZ()), VectorData.VectorType.ZeroPointZeroThree);
             double thresholdX = teleportPos.isRelativeX() ? player.uncertaintyHandler.getOffsetHorizontal(vector) : 0;
             double thresholdY = teleportPos.isRelativeY() ? player.uncertaintyHandler.getVerticalOffset(vector) : 0;
             double thresholdZ = teleportPos.isRelativeZ() ? player.uncertaintyHandler.getOffsetHorizontal(vector) : 0;
@@ -303,7 +303,7 @@ public class SetbackTeleportUtil extends Check implements PostPredictionCheck {
                 teleportData.setTeleport(true);
                 break;
             } else if (player.lastTransactionReceived.get() == teleportPos.getTransaction()) {
-                player.checkManager.getPacketCheck(BadPacketsN.class).flagAndAlert("thresholdX=" + thresholdX + ", x=" + Math.abs(clamped.getX() - x) + "thresholdY=" + thresholdY + ", y=" + Math.abs(clamped.getY() - y) + "thresholdZ=" + thresholdZ + ", z=" + Math.abs(clamped.getZ() - z));
+                player.checkManager.getPacketCheck(BadPacketsN.class).flagAndAlert("thresholdX=" + thresholdX + ", x=" + Math.abs(clamped.getX() - x) + ", thresholdY=" + thresholdY + ", y=" + Math.abs(clamped.getY() - y) + ", thresholdZ=" + thresholdZ + ", z=" + Math.abs(clamped.getZ() - z));
             } else if (player.lastTransactionReceived.get() > teleportPos.getTransaction()) {
                 // The player ignored the teleport (and this teleport matters), resynchronize
                 player.checkManager.getPacketCheck(BadPacketsN.class).flagAndAlert();
