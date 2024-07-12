@@ -301,6 +301,8 @@ public class SetbackTeleportUtil extends Check implements PostPredictionCheck {
                 teleportData.setTeleportData(teleportPos);
                 teleportData.setTeleport(true);
                 break;
+            } else if (player.lastTransactionReceived.get() == teleportPos.getTransaction()) {
+                player.checkManager.getPacketCheck(BadPacketsN.class).flagAndAlert("thresholdX=" + thresholdX + ", x=" + Math.abs(clamped.getX() - x) + "thresholdY=" + thresholdY + ", y=" + Math.abs(clamped.getY() - y) + "thresholdZ=" + thresholdZ + ", z=" + Math.abs(clamped.getZ() - z));
             } else if (player.lastTransactionReceived.get() > teleportPos.getTransaction()) {
                 // The player ignored the teleport (and this teleport matters), resynchronize
                 player.checkManager.getPacketCheck(BadPacketsN.class).flagAndAlert();
