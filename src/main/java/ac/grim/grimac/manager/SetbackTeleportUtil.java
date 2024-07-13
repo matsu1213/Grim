@@ -282,9 +282,9 @@ public class SetbackTeleportUtil extends Check implements PostPredictionCheck {
             // There seems to be a version difference in teleports past 30 million... just clamp the vector
             Vector3d clamped = VectorUtils.clampVector(new Vector3d(trueTeleportX, trueTeleportY, trueTeleportZ));
             VectorData vector = new VectorData(new Vector(teleportPos.getLocation().getX(), teleportPos.getLocation().getY(), teleportPos.getLocation().getZ()), VectorData.VectorType.ZeroPointZeroThree);
-            double thresholdX = teleportPos.isRelativeX() ? player.uncertaintyHandler.getOffsetHorizontal(vector) : 0;
-            double thresholdY = teleportPos.isRelativeY() ? player.uncertaintyHandler.getVerticalOffset(vector) : 0;
-            double thresholdZ = teleportPos.isRelativeZ() ? player.uncertaintyHandler.getOffsetHorizontal(vector) : 0;
+            double thresholdX = teleportPos.isRelativeX() ? player.getMovementThreshold() * 2 : 0;
+            double thresholdY = teleportPos.isRelativeY() ? player.getMovementThreshold() * 2 : 0;
+            double thresholdZ = teleportPos.isRelativeZ() ? player.getMovementThreshold() * 2 : 0;
             boolean closeEnoughY = Math.abs(clamped.getY() - y) <= 1e-7 + thresholdY; // 1.7 rounding
 
             if (player.lastTransactionReceived.get() == teleportPos.getTransaction() && Math.abs(clamped.getX() - x) <= thresholdX && closeEnoughY && Math.abs(clamped.getZ() - z) <= thresholdZ) {
