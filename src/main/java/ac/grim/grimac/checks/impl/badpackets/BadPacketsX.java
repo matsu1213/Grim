@@ -24,6 +24,7 @@ public class BadPacketsX extends Check implements PacketCheck {
     public final void handle(PacketReceiveEvent event, WrapperPlayClientPlayerDigging dig, StateType block) {
         if (dig.getAction() != DiggingAction.START_DIGGING && dig.getAction() != DiggingAction.FINISHED_DIGGING)
             return;
+        if (player.getSetbackTeleportUtil().insideUnloadedChunk()) return;
 
         final boolean invalid;
 
