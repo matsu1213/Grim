@@ -18,6 +18,7 @@ public class AirLiquidPlace extends BlockPlaceCheck {
     @Override
     public void onBlockPlace(final BlockPlace place) {
         if (player.gamemode == GameMode.CREATIVE) return;
+        if (player.getSetbackTeleportUtil().insideUnloadedChunk()) return;
         Vector3i blockPos = place.getPlacedAgainstBlockLocation();
         StateType placeAgainst = player.compensatedWorld.getStateTypeAt(blockPos.getX(), blockPos.getY(), blockPos.getZ());
 
