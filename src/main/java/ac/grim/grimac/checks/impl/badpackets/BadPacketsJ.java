@@ -7,7 +7,7 @@ import ac.grim.grimac.player.GrimPlayer;
 import com.github.retrooper.packetevents.event.PacketReceiveEvent;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 
-@CheckData(name = "BadPacketsJ")
+@CheckData(name = "BadPacketsJ", description = "Sent steer vehicle packets while not in a vehicle")
 public class BadPacketsJ extends Check implements PacketCheck {
     public BadPacketsJ(GrimPlayer player) {
         super(player);

@@ -24,7 +24,7 @@ package ac.grim.grimac.utils.math;
 // Update a few months later
 
 // WHY DID THEY CHANGE FASTMATH
-// This is impossible, and I give up! 
+// This is impossible, and I give up!
 //
 // Instead of fixing the damn issue of changing vanilla mechanics, the new version patches some
 // issues with half angles.  Yes, it was wrong, so they made it more accurate, but this makes our

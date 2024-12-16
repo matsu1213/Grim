@@ -28,11 +28,13 @@ public final class BoundingBoxSize {
 
     private static float getWidthMinusBaby(GrimPlayer player, PacketEntity packetEntity) {
         final EntityType type = packetEntity.getType();
-        if (EntityTypes.AXOLOTL.equals(type) || EntityTypes.PANDA.equals(type)) {
+        if (EntityTypes.AXOLOTL.equals(type)) {
+            return 0.75f;
+        } else if (EntityTypes.PANDA.equals(type)) {
             return 1.3f;
         } else if (EntityTypes.BAT.equals(type) || EntityTypes.PARROT.equals(type) || EntityTypes.COD.equals(type) || EntityTypes.EVOKER_FANGS.equals(type) || EntityTypes.TROPICAL_FISH.equals(type) || EntityTypes.FROG.equals(type)) {
             return 0.5f;
-        } else if (EntityTypes.BEE.equals(type) || EntityTypes.PUFFERFISH.equals(type) || EntityTypes.SALMON.equals(type) || EntityTypes.SNOW_GOLEM.equals(type) || EntityTypes.CAVE_SPIDER.equals(type)) {
+        } else if (EntityTypes.ARMADILLO.equals(type) || EntityTypes.BEE.equals(type) || EntityTypes.PUFFERFISH.equals(type) || EntityTypes.SALMON.equals(type) || EntityTypes.SNOW_GOLEM.equals(type) || EntityTypes.CAVE_SPIDER.equals(type)) {
             return 0.7f;
         } else if (EntityTypes.WITHER_SKELETON.equals(type)) {
             return player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_9) ? 0.7f : 0.72f;
@@ -127,9 +129,7 @@ public final class BoundingBoxSize {
         double y = box.minY;
         double z = (box.maxZ + box.minZ) / 2.0;
 
-        if (entity instanceof PacketEntityTrackXRot) {
-            PacketEntityTrackXRot xRotEntity = (PacketEntityTrackXRot) entity;
-
+        if (entity instanceof PacketEntityTrackXRot xRotEntity) {
             // Horses desync here, and we can't do anything about it without interpolating animations.
             // Mojang just has to fix it.  I'm not attempting to fix it.
             // Striders also do the same with animations, causing a desync.
@@ -231,7 +231,11 @@ public final class BoundingBoxSize {
     }
     private static float getHeightMinusBaby(GrimPlayer player, PacketEntity packetEntity) {
         final EntityType type = packetEntity.getType();
-        if (EntityTypes.AXOLOTL.equals(type) || EntityTypes.BEE.equals(type) || EntityTypes.DOLPHIN.equals(type) || EntityTypes.ALLAY.equals(type)) {
+        if (EntityTypes.ARMADILLO.equals(type)) {
+            return 0.65f;
+        } else if (EntityTypes.AXOLOTL.equals(type)) {
+            return 0.42f;
+        } else if (EntityTypes.BEE.equals(type) || EntityTypes.DOLPHIN.equals(type) || EntityTypes.ALLAY.equals(type)) {
             return 0.6f;
         } else if (EntityTypes.EVOKER_FANGS.equals(type) || EntityTypes.VEX.equals(type)) {
             return 0.8f;

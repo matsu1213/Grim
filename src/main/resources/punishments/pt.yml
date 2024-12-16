@@ -1,5 +1,5 @@
 # %check_name% - nome da verificação
-# %description% - description of the check
+# %description% - descrição da verificação
 # %vl% - violações
 # %verbose% - informação extra
 # %player% - nome do jogador
@@ -70,6 +70,7 @@ Punishments:
     checks:
       - "EntityControl"
       - "NoSlow"
+      - "MultiActions"
       - "Place"
       - "Baritone"
       - "FastBreak"
@@ -81,6 +82,7 @@ Punishments:
   Combat:
     remove-violations-after: 300
     checks:
+      - "Interact"
       - "Killaura"
       - "Aim"
     commands:

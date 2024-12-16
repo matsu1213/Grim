@@ -6,7 +6,6 @@ import ac.grim.grimac.player.GrimPlayer;
 import com.github.retrooper.packetevents.event.PacketReceiveEvent;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientInteractEntity;
-import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerFlying;
 import lombok.Getter;
 
 @Getter
@@ -27,7 +26,7 @@ public class ActionManager extends Check implements PacketCheck {
                 attacking = true;
                 lastAttack = System.currentTimeMillis();
             }
-        } else if (WrapperPlayClientPlayerFlying.isFlying(event.getPacketType())) {
+        } else if (isTickPacketIncludingNonMovement(event.getPacketType())) {
             player.totalFlyingPacketsSent++;
             attacking = false;
         }

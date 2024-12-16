@@ -3,6 +3,7 @@ package ac.grim.grimac.events.packets;
 import ac.grim.grimac.GrimAPI;
 import ac.grim.grimac.player.GrimPlayer;
 import ac.grim.grimac.utils.collisions.datatypes.SimpleCollisionBox;
+import ac.grim.grimac.utils.data.KnownInput;
 import ac.grim.grimac.utils.data.packetentity.PacketEntity;
 import ac.grim.grimac.utils.data.packetentity.PacketEntityHorse;
 import com.github.retrooper.packetevents.PacketEvents;
@@ -10,9 +11,9 @@ import com.github.retrooper.packetevents.event.PacketListenerAbstract;
 import com.github.retrooper.packetevents.event.PacketListenerPriority;
 import com.github.retrooper.packetevents.event.PacketReceiveEvent;
 import com.github.retrooper.packetevents.manager.server.ServerVersion;
-import com.github.retrooper.packetevents.protocol.entity.type.EntityTypes;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 import com.github.retrooper.packetevents.protocol.player.ClientVersion;
+import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerInput;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientSteerVehicle;
 
 public class PacketPlayerSteer extends PacketListenerAbstract {
@@ -23,12 +24,11 @@ public class PacketPlayerSteer extends PacketListenerAbstract {
 
     @Override
     public void onPacketReceive(PacketReceiveEvent event) {
-
         if (event.getPacketType() == PacketType.Play.Client.STEER_VEHICLE) {
-            WrapperPlayClientSteerVehicle steer = new WrapperPlayClientSteerVehicle(event);
-
             GrimPlayer player = GrimAPI.INSTANCE.getPlayerDataManager().getPlayer(event.getUser());
             if (player == null) return;
+
+            WrapperPlayClientSteerVehicle steer = new WrapperPlayClientSteerVehicle(event);
 
             float forwards = steer.getForward();
             float sideways = steer.getSideways();
@@ -100,6 +100,33 @@ public class PacketPlayerSteer extends PacketListenerAbstract {
             }
 
             player.packetStateData.receivedSteerVehicle = true;
+        } else if (event.getPacketType() == PacketType.Play.Client.PLAYER_INPUT) {
+            GrimPlayer player = GrimAPI.INSTANCE.getPlayerDataManager().getPlayer(event.getUser());
+            if (player == null) return;
+
+            WrapperPlayClientPlayerInput input = new WrapperPlayClientPlayerInput(event);
+            byte forward = 0;
+            byte sideways = 0;
+            if (input.isForward()) {
+                forward++;
+            }
+
+            if (input.isBackward()) {
+                forward--;
+            }
+
+            if (input.isLeft()) {
+                sideways++;
+            }
+
+            if (input.isRight()) {
+                sideways--;
+            }
+
+            player.vehicleData.nextVehicleForward = forward * 0.98f;
+            player.vehicleData.nextVehicleHorizontal = sideways * 0.98f;
+
+            player.packetStateData.knownInput = new KnownInput(input.isForward(), input.isBackward(), input.isLeft(), input.isRight(), input.isJump(), input.isShift(), input.isSprint());
         }
     }
 }

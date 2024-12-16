@@ -18,7 +18,7 @@ import com.github.retrooper.packetevents.protocol.world.states.type.StateTypes;
 
 public class DynamicConnecting {
 
-    public static CollisionBox[] makeShapes(float p_196408_1_, float p_196408_2_, float p_196408_3_, float p_196408_4_, float p_196408_5_, boolean includeCenter) {
+    public static CollisionBox[] makeShapes(float p_196408_1_, float p_196408_2_, float p_196408_3_, float p_196408_4_, float p_196408_5_, boolean includeCenter, int additionalMaxIndex) {
         float middleMin = 8.0F - p_196408_1_;
         float middleMax = 8.0F + p_196408_1_;
         float f2 = 8.0F - p_196408_2_;
@@ -29,14 +29,21 @@ public class DynamicConnecting {
         SimpleCollisionBox voxelshape3 = new HexCollisionBox(0.0D, p_196408_4_, f2, f3, p_196408_5_, f3);
         SimpleCollisionBox voxelshape4 = new HexCollisionBox(f2, p_196408_4_, f2, 16.0D, p_196408_5_, f3);
 
-        ComplexCollisionBox voxelshape5 = new ComplexCollisionBox(voxelshape1, voxelshape4);
-        ComplexCollisionBox voxelshape6 = new ComplexCollisionBox(voxelshape2, voxelshape3);
+        ComplexCollisionBox voxelshape5 = new ComplexCollisionBox(2 + additionalMaxIndex, voxelshape1, voxelshape4);
+        ComplexCollisionBox voxelshape6 = new ComplexCollisionBox(2 + additionalMaxIndex, voxelshape2, voxelshape3);
 
-        CollisionBox[] avoxelshape = new CollisionBox[]{NoCollisionBox.INSTANCE, voxelshape2, voxelshape3, voxelshape6, voxelshape1, new ComplexCollisionBox(voxelshape2, voxelshape1), new ComplexCollisionBox(voxelshape3, voxelshape1), new ComplexCollisionBox(voxelshape6, voxelshape1), voxelshape4, new ComplexCollisionBox(voxelshape2, voxelshape4), new ComplexCollisionBox(voxelshape3, voxelshape4), new ComplexCollisionBox(voxelshape6, voxelshape4), voxelshape5, new ComplexCollisionBox(voxelshape2, voxelshape5), new ComplexCollisionBox(voxelshape3, voxelshape5), new ComplexCollisionBox(voxelshape6, voxelshape5)};
+        CollisionBox[] avoxelshape = new CollisionBox[]{
+                NoCollisionBox.INSTANCE, voxelshape2, voxelshape3, voxelshape6, voxelshape1,
+                new ComplexCollisionBox(2 + additionalMaxIndex, voxelshape2, voxelshape1), new ComplexCollisionBox(2 + additionalMaxIndex, voxelshape3, voxelshape1),
+                new ComplexCollisionBox(3 + additionalMaxIndex, voxelshape2, voxelshape3, voxelshape1), voxelshape4,
+                new ComplexCollisionBox(2 + additionalMaxIndex, voxelshape2, voxelshape4), new ComplexCollisionBox(2 + additionalMaxIndex, voxelshape3, voxelshape4),
+                new ComplexCollisionBox(3 + additionalMaxIndex, voxelshape2, voxelshape3, voxelshape4), voxelshape5,
+                new ComplexCollisionBox(3 + additionalMaxIndex, voxelshape2, voxelshape1, voxelshape4), new ComplexCollisionBox(3 + additionalMaxIndex, voxelshape3, voxelshape1, voxelshape4),
+                new ComplexCollisionBox(4 + additionalMaxIndex, voxelshape1, voxelshape2, voxelshape3, voxelshape4)};
 
         if (includeCenter) {
             for (int i = 0; i < 16; ++i) {
-                avoxelshape[i] = new ComplexCollisionBox(up, avoxelshape[i]);
+                avoxelshape[i] = avoxelshape[i].union(up);
             }
         }
 

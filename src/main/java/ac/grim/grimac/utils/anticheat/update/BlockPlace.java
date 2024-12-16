@@ -7,6 +7,7 @@ import ac.grim.grimac.utils.collisions.AxisUtil;
 import ac.grim.grimac.utils.collisions.CollisionData;
 import ac.grim.grimac.utils.collisions.blocks.DoorHandler;
 import ac.grim.grimac.utils.collisions.datatypes.CollisionBox;
+import ac.grim.grimac.utils.collisions.datatypes.ComplexCollisionBox;
 import ac.grim.grimac.utils.collisions.datatypes.SimpleCollisionBox;
 import ac.grim.grimac.utils.data.HitData;
 import ac.grim.grimac.utils.data.packetentity.PacketEntity;
@@ -18,6 +19,7 @@ import ac.grim.grimac.utils.nmsutil.Materials;
 import ac.grim.grimac.utils.nmsutil.ReachUtils;
 import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.manager.server.ServerVersion;
+import com.github.retrooper.packetevents.protocol.attribute.Attributes;
 import com.github.retrooper.packetevents.protocol.item.ItemStack;
 import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.protocol.player.InteractionHand;
@@ -36,7 +38,6 @@ import lombok.Setter;
 import org.bukkit.util.Vector;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -59,7 +60,8 @@ public class BlockPlace {
     StateType material;
     @Getter
     @Nullable HitData hitData;
-    @Setter
+    @Getter
+    int faceId;
     BlockFace face;
     @Getter
     @Setter
@@ -70,10 +72,14 @@ public class BlockPlace {
 
     @Getter private final boolean block;
 
-    public BlockPlace(GrimPlayer player, InteractionHand hand, Vector3i blockPosition, BlockFace face, ItemStack itemStack, HitData hitData) {
+    // Allocated once instead of in functions to reduce new[] calls that need to be made. Since per-instance BlockPlace is always dealt with on the same thread we can use 1 buffer array
+    private final SimpleCollisionBox[] collisions = new SimpleCollisionBox[ComplexCollisionBox.DEFAULT_MAX_COLLISION_BOX_SIZE];
+
+    public BlockPlace(GrimPlayer player, InteractionHand hand, Vector3i blockPosition, int faceId, BlockFace face, ItemStack itemStack, HitData hitData) {
         this.player = player;
         this.hand = hand;
         this.blockPosition = blockPosition;
+        this.faceId = faceId;
         this.face = face;
         this.itemStack = itemStack;
         if (itemStack.getType().getPlacedType() == null) {
@@ -197,12 +203,12 @@ public class BlockPlace {
         if (BlockTags.LEAVES.contains(data.getType())) return false;
         if (BlockTags.FENCE_GATES.contains(data.getType())) return false;
 
-        List<SimpleCollisionBox> collisions = new ArrayList<>();
-        box.downCast(collisions);
+        int size = box.downCast(collisions);
 
         AxisSelect axis = AxisUtil.getAxis(facing.getOppositeFace());
 
-        for (SimpleCollisionBox simpleBox : collisions) {
+        for (int i = 0; i < size; i++) {
+            SimpleCollisionBox simpleBox = collisions[i];
             simpleBox = axis.modify(simpleBox);
             if (simpleBox.minX <= 7 / 16d && simpleBox.maxX >= 7 / 16d
                     && simpleBox.minY <= 0 && simpleBox.maxY >= 10 / 16d
@@ -222,12 +228,12 @@ public class BlockPlace {
         if (isFullFace(facing)) return true;
         if (BlockTags.LEAVES.contains(data.getType())) return false;
 
-        List<SimpleCollisionBox> collisions = new ArrayList<>();
-        box.downCast(collisions);
+        int size = box.downCast(collisions);
 
         AxisSelect axis = AxisUtil.getAxis(facing.getOppositeFace());
 
-        for (SimpleCollisionBox simpleBox : collisions) {
+        for (int i = 0; i < size; i++) {
+            SimpleCollisionBox simpleBox = collisions[i];
             simpleBox = axis.modify(simpleBox);
             if (simpleBox.minX <= 2 / 16d && simpleBox.maxX >= 14 / 16d
                     && simpleBox.minY <= 0 && simpleBox.maxY >= 1
@@ -286,10 +292,10 @@ public class BlockPlace {
             }
         }
 
-        List<SimpleCollisionBox> collisions = new ArrayList<>();
-        box.downCast(collisions);
+        int size = box.downCast(collisions);
 
-        for (SimpleCollisionBox simpleBox : collisions) {
+        for (int i = 0; i < size; i++) {
+            SimpleCollisionBox simpleBox = collisions[i];
             if (axis.modify(simpleBox).isFullBlockNoCache()) return true;
         }
 
@@ -315,12 +321,12 @@ public class BlockPlace {
         if (isFullFace(facing)) return true;
         if (BlockTags.LEAVES.contains(data.getType())) return false;
 
-        List<SimpleCollisionBox> collisions = new ArrayList<>();
-        box.downCast(collisions);
+        int size = box.downCast(collisions);
 
         AxisSelect axis = AxisUtil.getAxis(facing.getOppositeFace());
 
-        for (SimpleCollisionBox simpleBox : collisions) {
+        for (int i = 0; i < size; i++) {
+            SimpleCollisionBox simpleBox = collisions[i];
             simpleBox = axis.modify(simpleBox);
             // If all sides to the box have width, there is collision.
             switch (facing) {
@@ -436,6 +442,16 @@ public class BlockPlace {
         return face;
     }
 
+    public void setFace(BlockFace face) {
+        this.face = face;
+        this.faceId = face.getFaceValue();
+    }
+
+    public void setFaceId(int face) {
+        this.faceId = face;
+        this.face = PacketEvents.getAPI().getServerManager().getVersion().isNewerThanOrEquals(ServerVersion.V_1_9) ? BlockFace.getBlockFaceByValue(faceId) : BlockFace.getLegacyBlockFaceByValue(faceId);
+    }
+
     private List<BlockFace> getNearestLookingDirections() {
         float f = player.yRot * ((float) Math.PI / 180F);
         float f1 = -player.xRot * ((float) Math.PI / 180F);
@@ -524,21 +540,14 @@ public class BlockPlace {
     }
 
     public Vector3i getNormalBlockFace() {
-        switch (face) {
-            default:
-            case UP:
-                return new Vector3i(0, 1, 0);
-            case DOWN:
-                return new Vector3i(0, -1, 0);
-            case SOUTH:
-                return new Vector3i(0, 0, 1);
-            case NORTH:
-                return new Vector3i(0, 0, -1);
-            case WEST:
-                return new Vector3i(-1, 0, 0);
-            case EAST:
-                return new Vector3i(1, 0, 0);
-        }
+        return switch (face) {
+            case DOWN -> new Vector3i(0, -1, 0);
+            case SOUTH -> new Vector3i(0, 0, 1);
+            case NORTH -> new Vector3i(0, 0, -1);
+            case WEST -> new Vector3i(-1, 0, 0);
+            case EAST -> new Vector3i(1, 0, 0);
+            default -> new Vector3i(0, 1, 0);
+        };
     }
 
     public void set(StateType material) {
@@ -574,8 +583,9 @@ public class BlockPlace {
                 for (PacketEntity entity : player.compensatedEntities.entityMap.values()) {
                     SimpleCollisionBox interpBox = entity.getPossibleCollisionBoxes();
 
-                    double width = BoundingBoxSize.getWidth(player, entity) * entity.scale;
-                    double height = BoundingBoxSize.getHeight(player, entity) * entity.scale;
+                    final double scale = entity.getAttributeValue(Attributes.SCALE);
+                    double width = BoundingBoxSize.getWidth(player, entity) * scale;
+                    double height = BoundingBoxSize.getHeight(player, entity) * scale;
                     double interpWidth = Math.max(interpBox.maxX - interpBox.minX, interpBox.maxZ - interpBox.minZ);
                     double interpHeight = interpBox.maxY - interpBox.minY;
 
@@ -655,10 +665,10 @@ public class BlockPlace {
         SimpleCollisionBox box = new SimpleCollisionBox(getPlacedAgainstBlockLocation());
         Vector look = ReachUtils.getLook(player, player.xRot, player.yRot);
 
-        final double distance = player.compensatedEntities.getSelf().getEntityInteractRange() + 3;
+        final double distance = player.compensatedEntities.getSelf().getAttributeValue(Attributes.BLOCK_INTERACTION_RANGE) + 3;
         Vector eyePos = new Vector(player.x, player.y + player.getEyeHeight(), player.z);
         Vector endReachPos = eyePos.clone().add(new Vector(look.getX() * distance, look.getY() * distance, look.getZ() * distance));
-        Vector intercept = ReachUtils.calculateIntercept(box, eyePos, endReachPos).getFirst();
+        Vector intercept = ReachUtils.calculateIntercept(box, eyePos, endReachPos).first();
 
         // Bring this back to relative to the block
         // The player didn't even click the block... (we should force resync BEFORE we get here!)

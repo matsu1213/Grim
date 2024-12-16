@@ -1070,7 +1070,7 @@ public enum BlockPlaceResult {
             ItemTypes.WHITE_TULIP, ItemTypes.PINK_TULIP,
             ItemTypes.OXEYE_DAISY, ItemTypes.CORNFLOWER,
             ItemTypes.LILY_OF_THE_VALLEY, ItemTypes.PINK_PETALS,
-            ItemTypes.GRASS),
+            ItemTypes.SHORT_GRASS),
 
     POWDER_SNOW_BUCKET((player, place) -> {
         place.set();

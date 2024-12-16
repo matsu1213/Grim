@@ -3,6 +3,8 @@ package ac.grim.grimac.utils.anticheat;
 import ac.grim.grimac.GrimAPI;
 import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.manager.server.ServerVersion;
+import com.github.retrooper.packetevents.util.Vector3f;
+import com.github.retrooper.packetevents.util.Vector3i;
 import lombok.experimental.UtilityClass;
 import net.md_5.bungee.api.ChatColor;
 
@@ -11,6 +13,13 @@ import java.util.regex.Pattern;
 
 @UtilityClass
 public class MessageUtil {
+    public String toUnlabledString(Vector3i vec) {
+        return vec == null ? "null" : vec.x + ", " + vec.y + ", " + vec.z;
+    }
+
+    public String toUnlabledString(Vector3f vec) {
+        return vec == null ? "null" : vec.x + ", " + vec.y + ", " + vec.z;
+    }
 
     public String format(String string) {
         string = formatWithNoColor(string);
@@ -20,13 +29,14 @@ public class MessageUtil {
     }
 
     public String formatWithNoColor(String string) {
-        return string.replace("%prefix%", GrimAPI.INSTANCE.getConfigManager().getConfig().getStringElse("prefix", "&bGrim &8»"));
+        return string.replace("%prefix%", GrimAPI.INSTANCE.getConfigManager().getPrefix());
     }
 
+    private static final Pattern HEX_PATTERN = Pattern.compile("#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})");
+
     private String translateHexCodes(String message) {
-        final String hexPattern = "#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})";
-        Matcher matcher = Pattern.compile(hexPattern).matcher(message);
-        StringBuffer sb = new StringBuffer(message.length());
+        Matcher matcher = HEX_PATTERN.matcher(message);
+        StringBuilder sb = new StringBuilder(message.length());
         while (matcher.find()) {
             String hex = matcher.group(1);
             ChatColor color = ChatColor.of("#" + hex);
@@ -35,4 +45,5 @@ public class MessageUtil {
         matcher.appendTail(sb);
         return sb.toString();
     }
+
 }

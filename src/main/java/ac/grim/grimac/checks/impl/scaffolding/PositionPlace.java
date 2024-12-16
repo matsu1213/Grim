@@ -8,7 +8,6 @@ import ac.grim.grimac.utils.collisions.datatypes.SimpleCollisionBox;
 import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.protocol.world.states.type.StateTypes;
 
-import java.util.Collections;
 
 @CheckData(name = "PositionPlace")
 public class PositionPlace extends BlockPlaceCheck {
@@ -28,8 +27,13 @@ public class PositionPlace extends BlockPlaceCheck {
         // Each position represents the best case scenario to have clicked
         //
         // We will now calculate the most optimal position for the player's head to be in
-        double minEyeHeight = Collections.min(player.getPossibleEyeHeights());
-        double maxEyeHeight = Collections.max(player.getPossibleEyeHeights());
+        final double[] possibleEyeHeights = player.getPossibleEyeHeights();
+        double minEyeHeight = Double.MAX_VALUE;
+        double maxEyeHeight = Double.MIN_VALUE;
+        for (double height : possibleEyeHeights) {
+            minEyeHeight = Math.min(minEyeHeight, height);
+            maxEyeHeight = Math.max(maxEyeHeight, height);
+        }
         // I love the idle packet, why did you remove it mojang :(
         // Don't give 0.03 lenience if the player is a 1.8 player and we know they couldn't have 0.03'd because idle packet
         double movementThreshold = !player.packetStateData.didLastMovementIncludePosition || player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_9) ? player.getMovementThreshold() : 0;
@@ -44,27 +48,21 @@ public class PositionPlace extends BlockPlaceCheck {
 
         // So now we have the player's possible eye positions
         // So then look at the face that the player has clicked
-        boolean flag = false;
-        switch (place.getDirection()) {
-            case NORTH: // Z- face
-                flag = eyePositions.minZ > combined.minZ;
-                break;
-            case SOUTH: // Z+ face
-                flag = eyePositions.maxZ < combined.maxZ;
-                break;
-            case EAST: // X+ face
-                flag = eyePositions.maxX < combined.maxX;
-                break;
-            case WEST: // X- face
-                flag = eyePositions.minX > combined.minX;
-                break;
-            case UP: // Y+ face
-                flag = eyePositions.maxY < combined.maxY;
-                break;
-            case DOWN: // Y- face
-                flag = eyePositions.minY > combined.minY;
-                break;
-        }
+        boolean flag = switch (place.getDirection()) {
+            case NORTH -> // Z- face
+                    eyePositions.minZ > combined.minZ;
+            case SOUTH -> // Z+ face
+                    eyePositions.maxZ < combined.maxZ;
+            case EAST -> // X+ face
+                    eyePositions.maxX < combined.maxX;
+            case WEST -> // X- face
+                    eyePositions.minX > combined.minX;
+            case UP -> // Y+ face
+                    eyePositions.maxY < combined.maxY;
+            case DOWN -> // Y- face
+                    eyePositions.minY > combined.minY;
+            default -> false;
+        };
 
         if (flag) {
             if (flagAndAlert() && shouldModifyPackets() && shouldCancel()) {

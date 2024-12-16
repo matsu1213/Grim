@@ -8,7 +8,7 @@ import com.github.retrooper.packetevents.event.PacketReceiveEvent;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientSteerVehicle;
 
-@CheckData(name = "BadPacketsB")
+@CheckData(name = "BadPacketsB", description = "Sent impossible steer vehicle packet")
 public class BadPacketsB extends Check implements PacketCheck {
     public BadPacketsB(GrimPlayer player) {
         super(player);

@@ -9,18 +9,21 @@ import ac.grim.grimac.utils.nmsutil.JumpPower;
 import com.github.retrooper.packetevents.protocol.item.ItemStack;
 import com.github.retrooper.packetevents.protocol.item.type.ItemTypes;
 import com.github.retrooper.packetevents.protocol.player.ClientVersion;
+import com.github.retrooper.packetevents.protocol.potion.PotionTypes;
 import com.github.retrooper.packetevents.protocol.world.states.type.StateTypes;
 import org.bukkit.util.Vector;
 
 import java.util.HashSet;
+import java.util.OptionalInt;
 import java.util.Set;
 
 public class PredictionEngineNormal extends PredictionEngine {
 
     public static void staticVectorEndOfTick(GrimPlayer player, Vector vector) {
         double adjustedY = vector.getY();
-        if (player.compensatedEntities.getLevitationAmplifier() != null) {
-            adjustedY += (0.05 * (player.compensatedEntities.getLevitationAmplifier() + 1) - vector.getY()) * 0.2;
+        final OptionalInt levitation = player.compensatedEntities.getPotionLevelForPlayer(PotionTypes.LEVITATION);
+        if (levitation.isPresent()) {
+            adjustedY += (0.05 * (levitation.getAsInt() + 1) - vector.getY()) * 0.2;
             // Reset fall distance with levitation
             player.fallDistance = 0;
         } else if (player.hasGravity) {
@@ -34,6 +37,10 @@ public class PredictionEngineNormal extends PredictionEngine {
 
     @Override
     public void addJumpsToPossibilities(GrimPlayer player, Set<VectorData> existingVelocities) {
+        if (player.supportsEndTick() && !player.packetStateData.knownInput.jump()) {
+            return;
+        }
+
         for (VectorData vector : new HashSet<>(existingVelocities)) {
             Vector jump = vector.vector.clone();
 
@@ -43,7 +50,8 @@ public class PredictionEngineNormal extends PredictionEngine {
                 // If the player didn't try to jump
                 // And 0.03 didn't affect onGround status
                 // The player cannot jump
-                if (((player.compensatedEntities.getJumpAmplifier() == null || player.compensatedEntities.getJumpAmplifier() >= 0) && player.onGround) || !player.lastOnGround)
+                final OptionalInt jumpBoost = player.compensatedEntities.getPotionLevelForPlayer(PotionTypes.JUMP_BOOST);
+                if (((jumpBoost.isEmpty() || jumpBoost.getAsInt() >= 0) && player.onGround) || !player.lastOnGround)
                     return;
 
                 JumpPower.jumpFromGround(player, jump);

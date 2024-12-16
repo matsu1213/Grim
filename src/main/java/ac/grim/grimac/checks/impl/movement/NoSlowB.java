@@ -7,7 +7,7 @@ import ac.grim.grimac.player.GrimPlayer;
 import com.github.retrooper.packetevents.event.PacketReceiveEvent;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerFlying;
 
-@CheckData(name = "NoSlowB", setback = 5)
+@CheckData(name = "NoSlowB", description = "Sprinting with too low hunger", setback = 5)
 public class NoSlowB extends Check implements PacketCheck {
 
     public NoSlowB(GrimPlayer player) {

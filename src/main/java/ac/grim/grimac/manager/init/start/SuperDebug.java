@@ -12,6 +12,8 @@ import ac.grim.grimac.utils.lists.EvictingQueue;
 import ac.grim.grimac.utils.math.GrimMath;
 import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.protocol.world.states.WrappedBlockState;
+import it.unimi.dsi.fastutil.objects.Object2IntMap;
+import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import lombok.AllArgsConstructor;
 import org.bukkit.util.Vector;
 
@@ -20,7 +22,7 @@ import java.util.*;
 public final class SuperDebug extends Check implements PostPredictionCheck {
     private static final StringBuilder[] flags = new StringBuilder[256]; //  17 MB of logs in memory
 
-    Map<StringBuilder, Integer> continuedDebug = new HashMap<>();
+    Object2IntMap<StringBuilder> continuedDebug = new Object2IntOpenHashMap<>();
 
     List<VectorData> predicted = new EvictingQueue<>(60);
     List<Vector> actually = new EvictingQueue<>(60);
@@ -45,7 +47,7 @@ public final class SuperDebug extends Check implements PostPredictionCheck {
 
         Location location = new Location(player.x, player.y, player.z, player.xRot, player.yRot, player.bukkitPlayer == null ? "null" : player.bukkitPlayer.getWorld().getName());
 
-        for (Iterator<Map.Entry<StringBuilder, Integer>> it = continuedDebug.entrySet().iterator(); it.hasNext(); ) {
+        for (Iterator<Object2IntMap.Entry<StringBuilder>> it = continuedDebug.object2IntEntrySet().iterator(); it.hasNext(); ) {
             Map.Entry<StringBuilder, Integer> debug = it.next();
             appendDebug(debug.getKey(), player.predictedVelocity, player.actualMovement, location, player.startTickClientVel, player.baseTickAddition, player.baseTickWaterPushing);
             debug.setValue(debug.getValue() - 1);

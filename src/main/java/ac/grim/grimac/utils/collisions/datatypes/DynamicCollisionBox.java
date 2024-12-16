@@ -21,6 +21,14 @@ public class DynamicCollisionBox implements CollisionBox {
         this.block = block;
     }
 
+    // Untested but currently unused
+    // *should* work because every single one of these eventually becomes a Complex, Simple, or NoCollision Box
+//    @Override
+    public CollisionBox union(SimpleCollisionBox other) {
+        CollisionBox dynamicBox = box.fetch(player, version, block, x, y, z).offset(x, y, z);
+        return dynamicBox.union(other);
+    }
+
     @Override
     public boolean isCollided(SimpleCollisionBox other) {
         return box.fetch(player, version, block, x, y, z).offset(x, y, z).isCollided(other);
@@ -42,6 +50,11 @@ public class DynamicCollisionBox implements CollisionBox {
         this.y += y;
         this.z += z;
         return this;
+    }
+
+    @Override
+    public int downCast(SimpleCollisionBox[] list) {
+        return box.fetch(player, version, block, x, y, z).offset(x, y, z).downCast(list);
     }
 
     @Override

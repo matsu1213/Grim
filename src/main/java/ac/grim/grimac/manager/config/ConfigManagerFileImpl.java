@@ -1,56 +1,43 @@
-package ac.grim.grimac.manager;
+package ac.grim.grimac.manager.config;
 
 import ac.grim.grimac.GrimAC;
 import ac.grim.grimac.GrimAPI;
+import ac.grim.grimac.api.common.BasicReloadable;
+import ac.grim.grimac.api.config.ConfigManager;
 import ac.grim.grimac.utils.anticheat.LogUtil;
 import github.scarsz.configuralize.DynamicConfig;
 import github.scarsz.configuralize.Language;
-import lombok.Getter;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
-public class ConfigManager {
-    @Getter
+public class ConfigManagerFileImpl implements ConfigManager, BasicReloadable {
+
     private final DynamicConfig config;
-    @Getter
-    private final File configFile = new File(GrimAPI.INSTANCE.getPlugin().getDataFolder(), "config.yml");
-    @Getter
-    private final File messagesFile = new File(GrimAPI.INSTANCE.getPlugin().getDataFolder(), "messages.yml");
-    @Getter
-    private final File discordFile = new File(GrimAPI.INSTANCE.getPlugin().getDataFolder(), "discord.yml");
-    @Getter
-    private final File punishFile = new File(GrimAPI.INSTANCE.getPlugin().getDataFolder(), "punishments.yml");
-    @Getter
-    private int maxPingTransaction = 60; // This is just a really hot variable so cache it.
-    @Getter
-    private boolean ignoreDuplicatePacketRotation = false;
 
-    @Getter
-    private boolean experimentalChecks = false;
-
-    private final List<Pattern> ignoredClientPatterns = new ArrayList<>();
-
-    public ConfigManager() {
-        upgrade();
-
-        // load config
-        GrimAPI.INSTANCE.getPlugin().getDataFolder().mkdirs();
-        config = new DynamicConfig();
-        config.addSource(GrimAC.class, "config", getConfigFile());
-        config.addSource(GrimAC.class, "messages", getMessagesFile());
-        config.addSource(GrimAC.class, "discord", getDiscordFile());
-        config.addSource(GrimAC.class, "punishments", getPunishFile());
-
-        reload();
+    private File getConfigFile(String path) {
+        return new File(GrimAPI.INSTANCE.getPlugin().getDataFolder(), path);
     }
 
+    public ConfigManagerFileImpl() {
+        config = new DynamicConfig();
+    }
+
+    private boolean initialized = false;
+
+    @Override
     public void reload() {
+        GrimAPI.INSTANCE.getPlugin().getDataFolder().mkdirs();
+        if (!initialized) {
+            initialized = true;
+            config.addSource(GrimAC.class, "config", getConfigFile("config.yml"));
+            config.addSource(GrimAC.class, "messages", getConfigFile("messages.yml"));
+            config.addSource(GrimAC.class, "discord", getConfigFile("discord.yml"));
+            config.addSource(GrimAC.class, "punishments", getConfigFile("punishments.yml"));
+        }
+        //
         String languageCode = System.getProperty("user.language").toUpperCase();
 
         try {
@@ -77,24 +64,6 @@ public class ConfigManager {
         } catch (Exception e) {
             throw new RuntimeException("Failed to load config", e);
         }
-        maxPingTransaction = config.getIntElse("max-transaction-time", 60);
-        ignoredClientPatterns.clear();
-        for (String string : config.getStringList("client-brand.ignored-clients")) {
-            try {
-                ignoredClientPatterns.add(Pattern.compile(string));
-            } catch (PatternSyntaxException e) {
-                throw new RuntimeException("Failed to compile client pattern", e);
-            }
-        }
-        experimentalChecks = config.getBooleanElse("experimental-checks", false);
-        ignoreDuplicatePacketRotation = config.getBooleanElse("ignore-duplicate-packet-rotation", false);
-    }
-
-    public boolean isIgnoredClient(String brand) {
-        for (Pattern pattern : ignoredClientPatterns) {
-            if (pattern.matcher(brand).find()) return true;
-        }
-        return false;
     }
 
     private void upgrade() {
@@ -317,4 +286,45 @@ public class ConfigManager {
         );
         Files.write(config.toPath(), configString.getBytes());
     }
+
+    @Override
+    public String getStringElse(String key, String otherwise) {
+        return config.getStringElse(key, otherwise);
+    }
+
+    @Override
+    public List<String> getStringList(String key) {
+        return config.getStringList(key);
+    }
+
+    @Override
+    public List<String> getStringListElse(String key, List<String> otherwise) {
+        return config.getStringListElse(key, otherwise);
+    }
+
+    @Override
+    public int getIntElse(String key, int other) {
+        return config.getIntElse(key, other);
+    }
+
+    @Override
+    public long getLongElse(String key, long otherwise) {
+        return config.getLongElse(key, otherwise);
+    }
+
+    @Override
+    public double getDoubleElse(String key, double otherwise) {
+        return config.getDoubleElse(key, otherwise);
+    }
+
+    @Override
+    public boolean getBooleanElse(String key, boolean otherwise) {
+        return config.getBooleanElse(key, otherwise);
+    }
+
+    @Override
+    public <T> T get(String key) {
+        return config.get(key);
+    }
+
 }

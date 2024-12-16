@@ -3,36 +3,40 @@ package ac.grim.grimac.utils.latency;
 import ac.grim.grimac.player.GrimPlayer;
 import ac.grim.grimac.utils.data.ShulkerData;
 import ac.grim.grimac.utils.data.TrackerData;
+import ac.grim.grimac.utils.data.attribute.ValuedAttribute;
 import ac.grim.grimac.utils.data.packetentity.*;
 import ac.grim.grimac.utils.data.packetentity.dragon.PacketEntityEnderDragon;
-import ac.grim.grimac.utils.math.GrimMath;
 import ac.grim.grimac.utils.nmsutil.BoundingBoxSize;
 import ac.grim.grimac.utils.nmsutil.WatchableIndexUtil;
 import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.manager.server.ServerVersion;
+import com.github.retrooper.packetevents.protocol.attribute.Attribute;
 import com.github.retrooper.packetevents.protocol.attribute.Attributes;
 import com.github.retrooper.packetevents.protocol.entity.data.EntityData;
 import com.github.retrooper.packetevents.protocol.entity.type.EntityType;
 import com.github.retrooper.packetevents.protocol.entity.type.EntityTypes;
 import com.github.retrooper.packetevents.protocol.player.ClientVersion;
+import com.github.retrooper.packetevents.protocol.player.UserProfile;
 import com.github.retrooper.packetevents.protocol.potion.PotionType;
 import com.github.retrooper.packetevents.protocol.potion.PotionTypes;
 import com.github.retrooper.packetevents.protocol.world.BlockFace;
+import com.github.retrooper.packetevents.protocol.world.Direction;
 import com.github.retrooper.packetevents.resources.ResourceLocation;
 import com.github.retrooper.packetevents.util.Vector3d;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerUpdateAttributes;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
-import org.bukkit.Bukkit;
+import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 
 import java.util.*;
 
 public class CompensatedEntities {
 
-    private static final UUID SPRINTING_MODIFIER_UUID = UUID.fromString("662A6B8D-DA3E-4C1C-8813-96EA6097278D");
+    public static final UUID SPRINTING_MODIFIER_UUID = UUID.fromString("662A6B8D-DA3E-4C1C-8813-96EA6097278D");
     public static final UUID SNOW_MODIFIER_UUID = UUID.fromString("1eaf83ff-7207-4596-b37a-d7a07b3ec4ce");
 
     public final Int2ObjectOpenHashMap<PacketEntity> entityMap = new Int2ObjectOpenHashMap<>(40, 0.7f);
     public final Int2ObjectOpenHashMap<TrackerData> serverPositionsMap = new Int2ObjectOpenHashMap<>(40, 0.7f);
+    public final Object2ObjectOpenHashMap<UUID, UserProfile> profiles = new Object2ObjectOpenHashMap<>();
     public Integer serverPlayerVehicle = null;
     public boolean hasSprintingAttributeEnabled = false;
 
@@ -69,8 +73,7 @@ public class CompensatedEntities {
         PacketEntity entity = entityMap.remove(entityID);
         if (entity == null) return;
 
-        if (entity instanceof PacketEntityEnderDragon) {
-            PacketEntityEnderDragon dragon = (PacketEntityEnderDragon) entity;
+        if (entity instanceof PacketEntityEnderDragon dragon) {
             for (int i = 1; i < dragon.getParts().size() + 1; i++) {
                 entityMap.remove(entityID + i);
             }
@@ -81,140 +84,65 @@ public class CompensatedEntities {
         }
     }
 
-    public Integer getJumpAmplifier() {
-        return getPotionLevelForPlayer(PotionTypes.JUMP_BOOST);
+    public OptionalInt getSlowFallingAmplifier() {
+        return player.getClientVersion().isOlderThanOrEquals(ClientVersion.V_1_12_2) ? OptionalInt.empty() : getPotionLevelForPlayer(PotionTypes.SLOW_FALLING);
     }
 
-    public Integer getLevitationAmplifier() {
-        return getPotionLevelForPlayer(PotionTypes.LEVITATION);
+    public OptionalInt getPotionLevelForPlayer(PotionType type) {
+        return getEntityInControl().getPotionEffectLevel(type);
     }
 
-    public Integer getSlowFallingAmplifier() {
-        return player.getClientVersion().isOlderThanOrEquals(ClientVersion.V_1_12_2) ? null : getPotionLevelForPlayer(PotionTypes.SLOW_FALLING);
+    public boolean hasPotionEffect(PotionType type) {
+        return getEntityInControl().hasPotionEffect(type);
     }
 
-    public Integer getDolphinsGraceAmplifier() {
-        return getPotionLevelForPlayer(PotionTypes.DOLPHINS_GRACE);
-    }
-
-    public Integer getPotionLevelForPlayer(PotionType type) {
-        PacketEntity desiredEntity = playerEntity.getRiding() != null ? playerEntity.getRiding() : playerEntity;
-
-        HashMap<PotionType, Integer> effects = desiredEntity.potionsMap;
-        if (effects == null) return null;
-
-        return effects.get(type);
-    }
-
-    public double getPlayerMovementSpeed() {
-        return calculateAttribute(player.compensatedEntities.getSelf().playerSpeed, 0.0, 1024.0);
+    public PacketEntity getEntityInControl() {
+        return playerEntity.getRiding() != null ? playerEntity.getRiding() : playerEntity;
     }
 
     public void updateAttributes(int entityID, List<WrapperPlayServerUpdateAttributes.Property> objects) {
         if (entityID == player.entityID) {
+            // Check for sprinting attribute. Note that this value can desync: https://bugs.mojang.com/browse/MC-69459
             for (WrapperPlayServerUpdateAttributes.Property snapshotWrapper : objects) {
-                if (snapshotWrapper.getAttribute() == Attributes.GENERIC_MOVEMENT_SPEED) {
-                    boolean found = false;
-                    List<WrapperPlayServerUpdateAttributes.PropertyModifier> modifiers = snapshotWrapper.getModifiers();
-                    for (WrapperPlayServerUpdateAttributes.PropertyModifier modifier : modifiers) {
-                        final ResourceLocation name = modifier.getName();
-                        if (name.getKey().equals(SPRINTING_MODIFIER_UUID.toString()) || name.getKey().equals("sprinting")) {
-                            found = true;
-                            break;
-                        }
+                final Attribute attribute = snapshotWrapper.getAttribute();
+                if (attribute != Attributes.MOVEMENT_SPEED) continue;
+
+                boolean found = false;
+                List<WrapperPlayServerUpdateAttributes.PropertyModifier> modifiers = snapshotWrapper.getModifiers();
+                for (WrapperPlayServerUpdateAttributes.PropertyModifier modifier : modifiers) {
+                    final ResourceLocation name = modifier.getName();
+                    if (name.getKey().equals(SPRINTING_MODIFIER_UUID.toString()) || name.getKey().equals("sprinting")) {
+                        found = true;
+                        break;
                     }
-
-                    // The server can set the player's sprinting attribute
-                    hasSprintingAttributeEnabled = found;
-                    player.compensatedEntities.getSelf().playerSpeed = snapshotWrapper;
-                    continue;
                 }
 
-                // TODO recode our attribute handling
-                final String key = snapshotWrapper.getKey();
-                // Attribute limits defined by https://minecraft.wiki/w/Attribute
-                // These seem to be clamped on the client, but not the server
-                switch (key) {
-                    case "minecraft:player.block_break_speed":
-                        player.compensatedEntities.getSelf().setBreakSpeedMultiplier(GrimMath.clamp(snapshotWrapper.getValue(), 0, 1024));
-                        break;
-                    case "minecraft:player.block_interaction_range":
-                        player.compensatedEntities.getSelf().setBlockInteractRange(GrimMath.clamp(snapshotWrapper.getValue(), 0, 64));
-                        break;
-                    case "minecraft:player.entity_interaction_range":
-                        player.compensatedEntities.getSelf().setEntityInteractRange(GrimMath.clamp(snapshotWrapper.getValue(), 0, 64));
-                        break;
-                    case "minecraft:generic.jump_strength":
-                        player.compensatedEntities.getSelf().setJumpStrength(GrimMath.clampFloat((float) snapshotWrapper.getValue(), 0, 32));
-                        break;
-                }
+                // The server can set the player's sprinting attribute
+                hasSprintingAttributeEnabled = found;
+                break;
             }
         }
 
         PacketEntity entity = player.compensatedEntities.getEntity(entityID);
+        if (entity == null) return;
 
-        if (player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_20_5)) {
-            for (WrapperPlayServerUpdateAttributes.Property snapshotWrapper : objects) {
-                final String key = snapshotWrapper.getKey();
-                if (key.equals("minecraft:generic.gravity")) {
-                    entity.gravityAttribute = GrimMath.clamp(snapshotWrapper.getValue(), -1, 1);
-                } else if (key.equals("minecraft:generic.scale")) {
-                    // The game itself casts to float, this is fine.
-                    entity.scale = GrimMath.clampFloat((float) snapshotWrapper.getValue(), 0.0625f, 16f);
-                } else if (key.equals("minecraft:generic.step_height")) {
-                    entity.stepHeight = GrimMath.clampFloat((float) snapshotWrapper.getValue(), 0f, 10f);
-                } else if (entity instanceof PacketEntityHorse && key.equals("minecraft:generic.jump_strength")) {
-                    // TODO check if this is how horses determine jump strength now
-                    ((PacketEntityHorse) entity).jumpStrength = GrimMath.clampFloat((float) snapshotWrapper.getValue(), 0, 32);
-                }
+        for (WrapperPlayServerUpdateAttributes.Property snapshotWrapper : objects) {
+            Attribute attribute = snapshotWrapper.getAttribute();
+            if (attribute == null) continue; // TODO: Warn if this happens? Either modded server or bug in packetevents.
+
+            // Rewrite horse.jumpStrength -> modern equivalent
+            if (attribute == Attributes.HORSE_JUMP_STRENGTH) {
+                attribute = Attributes.JUMP_STRENGTH;
             }
-        }
 
-        if (entity instanceof PacketEntityHorse) {
-            for (WrapperPlayServerUpdateAttributes.Property snapshotWrapper : objects) {
-                if (snapshotWrapper.getKey().toUpperCase().contains("MOVEMENT")) {
-                    ((PacketEntityHorse) entity).movementSpeedAttribute = (float) calculateAttribute(snapshotWrapper, 0.0, 1024.0);
-                }
-
-                if (snapshotWrapper.getKey().toUpperCase().contains("JUMP")) {
-                    ((PacketEntityHorse) entity).jumpStrength = calculateAttribute(snapshotWrapper, 0.0, 2.0);
-                }
+            final Optional<ValuedAttribute> valuedAttribute = entity.getAttribute(attribute);
+            if (valuedAttribute.isEmpty()) {
+                // Not an attribute we want to track
+                continue;
             }
+
+            valuedAttribute.get().with(snapshotWrapper);
         }
-
-        if (entity instanceof PacketEntityRideable) {
-            for (WrapperPlayServerUpdateAttributes.Property snapshotWrapper : objects) {
-                if (snapshotWrapper.getKey().toUpperCase().contains("MOVEMENT")) {
-                    ((PacketEntityRideable) entity).movementSpeedAttribute = (float) calculateAttribute(snapshotWrapper, 0.0, 1024.0);
-                }
-            }
-        }
-    }
-
-    private double calculateAttribute(WrapperPlayServerUpdateAttributes.Property snapshotWrapper, double minValue, double maxValue) {
-        double d0 = snapshotWrapper.getValue();
-
-        List<WrapperPlayServerUpdateAttributes.PropertyModifier> modifiers = snapshotWrapper.getModifiers();
-        modifiers.removeIf(modifier -> modifier.getUUID().equals(SPRINTING_MODIFIER_UUID) || modifier.getName().getKey().equals("sprinting"));
-
-        for (WrapperPlayServerUpdateAttributes.PropertyModifier attributemodifier : modifiers) {
-            if (attributemodifier.getOperation() == WrapperPlayServerUpdateAttributes.PropertyModifier.Operation.ADDITION)
-                d0 += attributemodifier.getAmount();
-        }
-
-        double d1 = d0;
-
-        for (WrapperPlayServerUpdateAttributes.PropertyModifier attributemodifier : modifiers) {
-            if (attributemodifier.getOperation() == WrapperPlayServerUpdateAttributes.PropertyModifier.Operation.MULTIPLY_BASE)
-                d1 += d0 * attributemodifier.getAmount();
-        }
-
-        for (WrapperPlayServerUpdateAttributes.PropertyModifier attributemodifier : modifiers) {
-            if (attributemodifier.getOperation() == WrapperPlayServerUpdateAttributes.PropertyModifier.Operation.MULTIPLY_TOTAL)
-                d1 *= 1.0D + attributemodifier.getAmount();
-        }
-
-        return GrimMath.clampFloat((float) d1, (float) minValue, (float) maxValue);
     }
 
     private void tickPassenger(PacketEntity riding, PacketEntity passenger) {
@@ -229,34 +157,34 @@ public class CompensatedEntities {
         }
     }
 
-    public void addEntity(int entityID, EntityType entityType, Vector3d position, float xRot, int data) {
+    public void addEntity(int entityID, UUID uuid, EntityType entityType, Vector3d position, float xRot, int data) {
         // Dropped items are all server sided and players can't interact with them (except create them!), save the performance
         if (entityType == EntityTypes.ITEM) return;
 
         PacketEntity packetEntity;
 
         if (EntityTypes.CAMEL.equals(entityType)) {
-            packetEntity = new PacketEntityCamel(player, entityType, position.getX(), position.getY(), position.getZ(), xRot);
+            packetEntity = new PacketEntityCamel(player, uuid, entityType, position.getX(), position.getY(), position.getZ(), xRot);
         } else if (EntityTypes.isTypeInstanceOf(entityType, EntityTypes.ABSTRACT_HORSE)) {
-            packetEntity = new PacketEntityHorse(player, entityType, position.getX(), position.getY(), position.getZ(), xRot);
+            packetEntity = new PacketEntityHorse(player, uuid, entityType, position.getX(), position.getY(), position.getZ(), xRot);
         } else if (entityType == EntityTypes.SLIME || entityType == EntityTypes.MAGMA_CUBE || entityType == EntityTypes.PHANTOM) {
-            packetEntity = new PacketEntitySizeable(player, entityType, position.getX(), position.getY(), position.getZ());
+            packetEntity = new PacketEntitySizeable(player, uuid, entityType, position.getX(), position.getY(), position.getZ());
+        } else if (EntityTypes.PIG.equals(entityType)) {
+            packetEntity = new PacketEntityRideable(player, uuid, entityType, position.getX(), position.getY(), position.getZ());
+        } else if (EntityTypes.SHULKER.equals(entityType)) {
+            packetEntity = new PacketEntityShulker(player, uuid, entityType, position.getX(), position.getY(), position.getZ());
+        } else if (EntityTypes.STRIDER.equals(entityType)) {
+            packetEntity = new PacketEntityStrider(player, uuid, entityType, position.getX(), position.getY(), position.getZ());
+        } else if (EntityTypes.isTypeInstanceOf(entityType, EntityTypes.BOAT) || EntityTypes.CHICKEN.equals(entityType)) {
+            packetEntity = new PacketEntityTrackXRot(player, uuid, entityType, position.getX(), position.getY(), position.getZ(), xRot);
+        } else if (EntityTypes.FISHING_BOBBER.equals(entityType)) {
+            packetEntity = new PacketEntityHook(player, uuid, entityType, position.getX(), position.getY(), position.getZ(), data);
+        } else if (EntityTypes.ENDER_DRAGON.equals(entityType)) {
+            packetEntity = new PacketEntityEnderDragon(player, uuid, entityID, position.getX(), position.getY(), position.getZ());
+        } else if (EntityTypes.PAINTING.equals(entityType)) {
+            packetEntity = new PacketEntityPainting(player, uuid, position.x, position.y, position.z, Direction.getByHorizontalIndex(data));
         } else {
-            if (EntityTypes.PIG.equals(entityType)) {
-                packetEntity = new PacketEntityRideable(player, entityType, position.getX(), position.getY(), position.getZ());
-            } else if (EntityTypes.SHULKER.equals(entityType)) {
-                packetEntity = new PacketEntityShulker(player, entityType, position.getX(), position.getY(), position.getZ());
-            } else if (EntityTypes.STRIDER.equals(entityType)) {
-                packetEntity = new PacketEntityStrider(player, entityType, position.getX(), position.getY(), position.getZ());
-            } else if (EntityTypes.isTypeInstanceOf(entityType, EntityTypes.BOAT) || EntityTypes.CHICKEN.equals(entityType)) {
-                packetEntity = new PacketEntityTrackXRot(player, entityType, position.getX(), position.getY(), position.getZ(), xRot);
-            } else if (EntityTypes.FISHING_BOBBER.equals(entityType)) {
-                packetEntity = new PacketEntityHook(player, entityType, position.getX(), position.getY(), position.getZ(), data);
-            } else if (EntityTypes.ENDER_DRAGON.equals(entityType)) {
-                packetEntity = new PacketEntityEnderDragon(player, entityID, position.getX(), position.getY(), position.getZ());
-            } else {
-                packetEntity = new PacketEntity(player, entityType, position.getX(), position.getY(), position.getZ());
-            }
+            packetEntity = new PacketEntity(player, uuid, entityType, position.getX(), position.getY(), position.getZ());
         }
 
         entityMap.put(entityID, packetEntity);
@@ -445,8 +373,7 @@ public class CompensatedEntities {
 
                 // track camel dashing
                 if (PacketEvents.getAPI().getServerManager().getVersion().isNewerThanOrEquals(ServerVersion.V_1_20)) {
-                    if (entity instanceof PacketEntityCamel) {
-                        PacketEntityCamel camel = (PacketEntityCamel) entity;
+                    if (entity instanceof PacketEntityCamel camel) {
                         EntityData entityData = WatchableIndexUtil.getIndex(watchableObjects, 18);
                         if (entityData != null) {
                             camel.dashing = (boolean) entityData.getValue();

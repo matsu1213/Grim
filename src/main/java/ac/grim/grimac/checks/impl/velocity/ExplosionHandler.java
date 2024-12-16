@@ -1,5 +1,6 @@
 package ac.grim.grimac.checks.impl.velocity;
 
+import ac.grim.grimac.api.config.ConfigManager;
 import ac.grim.grimac.checks.Check;
 import ac.grim.grimac.checks.CheckData;
 import ac.grim.grimac.checks.type.PostPredictionCheck;
@@ -7,18 +8,19 @@ import ac.grim.grimac.player.GrimPlayer;
 import ac.grim.grimac.utils.anticheat.update.PredictionComplete;
 import ac.grim.grimac.utils.data.VectorData;
 import ac.grim.grimac.utils.data.VelocityData;
+import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.event.PacketSendEvent;
+import com.github.retrooper.packetevents.manager.server.ServerVersion;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 import com.github.retrooper.packetevents.protocol.world.states.WrappedBlockState;
 import com.github.retrooper.packetevents.protocol.world.states.defaulttags.BlockTags;
 import com.github.retrooper.packetevents.protocol.world.states.type.StateType;
 import com.github.retrooper.packetevents.protocol.world.states.type.StateTypes;
 import com.github.retrooper.packetevents.protocol.world.states.type.StateValue;
-import com.github.retrooper.packetevents.util.Vector3f;
+import com.github.retrooper.packetevents.util.Vector3d;
 import com.github.retrooper.packetevents.util.Vector3i;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerExplosion;
 import lombok.Getter;
-import org.bukkit.Bukkit;
 import org.bukkit.util.Vector;
 import org.jetbrains.annotations.Nullable;
 
@@ -47,59 +49,70 @@ public class ExplosionHandler extends Check implements PostPredictionCheck {
         if (event.getPacketType() == PacketType.Play.Server.EXPLOSION) {
             WrapperPlayServerExplosion explosion = new WrapperPlayServerExplosion(event);
 
-            Vector3f velocity = explosion.getPlayerMotion();
-
-            final @Nullable WrapperPlayServerExplosion.BlockInteraction blockInteraction = explosion.getBlockInteraction();
-            final boolean shouldDestroy = blockInteraction != WrapperPlayServerExplosion.BlockInteraction.KEEP_BLOCKS;
-            if (!explosion.getRecords().isEmpty() && shouldDestroy) {
-                player.sendTransaction();
-
-                player.latencyUtils.addRealTimeTask(player.lastTransactionSent.get(), () -> {
-                    for (Vector3i record : explosion.getRecords()) {
-                        // Null OR not flip redstone blocks, then set to air
-                        if (blockInteraction != WrapperPlayServerExplosion.BlockInteraction.TRIGGER_BLOCKS) {
-                            player.compensatedWorld.updateBlock(record.x, record.y, record.z, 0);
-                        } else {
-                            // We need to flip redstone blocks, or do special things with other blocks
-                            final WrappedBlockState state = player.compensatedWorld.getWrappedBlockStateAt(record);
-                            final StateType type = state.getType();
-                            if (BlockTags.CANDLES.contains(type) || BlockTags.CANDLE_CAKES.contains(type)) {
-                                state.setLit(false);
-                                continue;
-                            } else if (type == StateTypes.BELL) {
-                                // Does this affect anything? I don't know, I don't see anything that relies on whether a bell is ringing.
-                                continue;
-                            }
-
-                            // Otherwise try and flip/open it.
-                            final Object poweredValue = state.getInternalData().get(StateValue.POWERED);
-                            final boolean canFlip = (poweredValue != null && !(Boolean) poweredValue) || type == StateTypes.LEVER;
-                            if (canFlip) {
-                                player.compensatedWorld.tickOpenable(record.x, record.y, record.z);
-                            }
-                        }
-                    }
-                });
+            // Since 1.21.2, the server will instead send these changes via block change packets
+            final boolean hasBlocks = PacketEvents.getAPI().getServerManager().getVersion().isOlderThan(ServerVersion.V_1_21_2);
+            if (hasBlocks) {
+                this.handleBlockExplosions(explosion);
             }
 
-            if (velocity.x != 0 || velocity.y != 0 || velocity.z != 0) {
+            Vector3d velocity = explosion.getKnockback();
+            if (velocity != null && (velocity.x != 0 || velocity.y != 0 || velocity.z != 0)) {
                 // No need to spam transactions
-                if (explosion.getRecords().isEmpty()) player.sendTransaction();
+                if (!hasBlocks || explosion.getRecords().isEmpty()) player.sendTransaction();
                 addPlayerExplosion(player.lastTransactionSent.get(), velocity);
                 event.getTasksAfterSend().add(player::sendTransaction);
             }
         }
     }
 
+    private void handleBlockExplosions(WrapperPlayServerExplosion explosion) {
+        final @Nullable WrapperPlayServerExplosion.BlockInteraction blockInteraction = explosion.getBlockInteraction();
+        final boolean shouldDestroy = blockInteraction != WrapperPlayServerExplosion.BlockInteraction.KEEP_BLOCKS;
+        if (explosion.getRecords().isEmpty() || !shouldDestroy) {
+            return;
+        }
+
+        player.sendTransaction();
+
+        player.latencyUtils.addRealTimeTask(player.lastTransactionSent.get(), () -> {
+            for (Vector3i record : explosion.getRecords()) {
+                // Null OR not flip redstone blocks, then set to air
+                if (blockInteraction != WrapperPlayServerExplosion.BlockInteraction.TRIGGER_BLOCKS) {
+                    player.compensatedWorld.updateBlock(record.x, record.y, record.z, 0);
+                } else {
+                    // We need to flip redstone blocks, or do special things with other blocks
+                    final WrappedBlockState state = player.compensatedWorld.getWrappedBlockStateAt(record);
+                    final StateType type = state.getType();
+                    if (BlockTags.CANDLES.contains(type) || BlockTags.CANDLE_CAKES.contains(type)) {
+                        state.setLit(false);
+                        continue;
+                    } else if (type == StateTypes.BELL) {
+                        // Does this affect anything? I don't know, I don't see anything that relies on whether a bell is ringing.
+                        continue;
+                    }
+
+                    // Otherwise try and flip/open it.
+                    final Object poweredValue = state.getInternalData().get(StateValue.POWERED);
+                    final boolean canFlip = (poweredValue != null && !(Boolean) poweredValue) || type == StateTypes.LEVER;
+                    if (canFlip) {
+                        player.compensatedWorld.tickOpenable(record.x, record.y, record.z);
+                    }
+                }
+            }
+        });
+    }
+
     public VelocityData getFutureExplosion() {
         // Chronologically in the future
-        if (firstBreadMap.size() > 0) {
+        if (!firstBreadMap.isEmpty()) {
             return firstBreadMap.peek();
         }
+
         // Less in the future
         if (lastExplosionsKnownTaken != null) {
             return lastExplosionsKnownTaken;
         }
+
         // Uncertain, might be in the future
         if (player.firstBreadExplosion != null && player.likelyExplosions == null) {
             return player.firstBreadExplosion;
@@ -120,7 +133,7 @@ public class ExplosionHandler extends Check implements PostPredictionCheck {
         return (player.likelyExplosions != null && player.likelyExplosions.offset > offsetToFlag) || (player.firstBreadExplosion != null && player.firstBreadExplosion.offset > offsetToFlag);
     }
 
-    public void addPlayerExplosion(int breadOne, Vector3f explosion) {
+    public void addPlayerExplosion(int breadOne, Vector3d explosion) {
         firstBreadMap.add(new VelocityData(-1, breadOne, player.getSetbackTeleportUtil().isSendingSetback, new Vector(explosion.getX(), explosion.getY(), explosion.getZ())));
     }
 
@@ -256,12 +269,10 @@ public class ExplosionHandler extends Check implements PostPredictionCheck {
     }
 
     @Override
-    public void reload() {
-        super.reload();
-
-        offsetToFlag = getConfig().getDoubleElse("Explosion.threshold", 0.00001);
-        setbackVL = getConfig().getDoubleElse("Explosion.setbackvl", 10);
-
+    public void onReload(ConfigManager config) {
+        offsetToFlag = config.getDoubleElse("Explosion.threshold", 0.00001);
+        setbackVL = config.getDoubleElse("Explosion.setbackvl", 10);
         if (setbackVL == -1) setbackVL = Double.MAX_VALUE;
     }
+
 }

@@ -9,6 +9,7 @@ import com.github.retrooper.packetevents.event.PacketReceiveEvent;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPluginMessage;
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 
 public class ClientBrand extends Check implements PacketCheck {
@@ -38,6 +39,7 @@ public class ClientBrand extends Check implements PacketCheck {
                 System.arraycopy(data, 1, minusLength, 0, minusLength.length);
 
                 brand = new String(minusLength).replace(" (Velocity)", ""); //removes velocity's brand suffix
+                brand = ChatColor.stripColor(brand); //strip color codes from client brand
                 if (player.checkManager.getPrePredictionCheck(ExploitA.class).checkString(brand)) brand = "sent log4j";
                 if (!GrimAPI.INSTANCE.getConfigManager().isIgnoredClient(brand)) {
                     String message = GrimAPI.INSTANCE.getConfigManager().getConfig().getStringElse("client-brand-format", "%prefix% &f%player% joined using %brand%");

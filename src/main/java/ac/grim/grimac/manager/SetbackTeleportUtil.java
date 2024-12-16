@@ -129,6 +129,7 @@ public class SetbackTeleportUtil extends Check implements PostPredictionCheck {
             vector.setY(vector.getY() - 0.05); // Make the player fall a bit
         } else { // Gliding doesn't have friction, we handle it differently
             PredictionEngineNormal.staticVectorEndOfTick(player, vector); // Lava and normal movement
+            vector.multiply(player.stuckSpeedMultiplier); // Prevent abusing setbacks to move out of blocks like webs
         }
 
         // stop 1.8 players from stepping onto 1.25 high blocks, because why not?
@@ -153,12 +154,12 @@ public class SetbackTeleportUtil extends Check implements PostPredictionCheck {
         VelocityData futureExplosion = player.checkManager.getExplosionHandler().getFutureExplosion();
 
         // Velocity sets
-        if (futureKb.getFirst() != null) {
-            clientVel = futureKb.getSecond();
+        if (futureKb.first() != null) {
+            clientVel = futureKb.second();
         }
 
         // Explosion adds
-        if (futureExplosion != null && (futureKb.getFirst() == null || futureKb.getFirst().transaction < futureExplosion.transaction)) {
+        if (futureExplosion != null && (futureKb.first() == null || futureKb.first().transaction < futureExplosion.transaction)) {
             clientVel.add(futureExplosion.vector);
         }
 
@@ -333,16 +334,16 @@ public class SetbackTeleportUtil extends Check implements PostPredictionCheck {
         while (true) {
             Pair<Integer, Vector3d> teleportPos = player.vehicleData.vehicleTeleports.peek();
             if (teleportPos == null) break;
-            if (lastTransaction < teleportPos.getFirst()) {
+            if (lastTransaction < teleportPos.first()) {
                 break;
             }
 
-            Vector3d position = teleportPos.getSecond();
+            Vector3d position = teleportPos.second();
             if (position.getX() == x && position.getY() == y && position.getZ() == z) {
                 player.vehicleData.vehicleTeleports.poll();
 
                 return true;
-            } else if (lastTransaction > teleportPos.getFirst() + 1) {
+            } else if (lastTransaction > teleportPos.first() + 1) {
                 player.vehicleData.vehicleTeleports.poll();
 
                 // Vehicles have terrible netcode so just ignore it if the teleport wasn't from us setting the player back
@@ -402,15 +403,15 @@ public class SetbackTeleportUtil extends Check implements PostPredictionCheck {
         Vector3d safePosition = new Vector3d(position.getX(), position.getY(), position.getZ());
 
         // We must convert relative teleports to avoid them becoming client controlled in the case of setback
-        if (flags.isSet(RelativeFlag.X.getMask())) {
+        if (flags.has(RelativeFlag.X)) {
             safePosition = safePosition.withX(safePosition.getX() + lastKnownGoodPosition.pos.getX());
         }
 
-        if (flags.isSet(RelativeFlag.Y.getMask())) {
+        if (flags.has(RelativeFlag.Y)) {
             safePosition = safePosition.withY(safePosition.getY() + lastKnownGoodPosition.pos.getY());
         }
 
-        if (flags.isSet(RelativeFlag.Z.getMask())) {
+        if (flags.has(RelativeFlag.Z)) {
             safePosition = safePosition.withZ(safePosition.getZ() + lastKnownGoodPosition.pos.getZ());
         }
 

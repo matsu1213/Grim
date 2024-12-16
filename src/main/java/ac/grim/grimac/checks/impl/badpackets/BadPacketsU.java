@@ -5,6 +5,8 @@ import ac.grim.grimac.checks.CheckData;
 import ac.grim.grimac.checks.type.PacketCheck;
 import ac.grim.grimac.player.GrimPlayer;
 import com.github.retrooper.packetevents.event.PacketReceiveEvent;
+import com.github.retrooper.packetevents.protocol.item.ItemStack;
+import com.github.retrooper.packetevents.protocol.item.type.ItemTypes;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.protocol.world.BlockFace;
@@ -12,7 +14,7 @@ import com.github.retrooper.packetevents.util.Vector3f;
 import com.github.retrooper.packetevents.util.Vector3i;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerBlockPlacement;
 
-@CheckData(name = "BadPacketsU", experimental = true)
+@CheckData(name = "BadPacketsU", description = "Sent impossible use item packet", experimental = true)
 public class BadPacketsU extends Check implements PacketCheck {
     public BadPacketsU(GrimPlayer player) {
         super(player);
@@ -29,8 +31,7 @@ public class BadPacketsU extends Check implements PacketCheck {
                 // except y gets wrapped?
                 final int expectedY = player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_8) ? 4095 : 255;
 
-                // never sent when not holding anything
-                final boolean failedItemCheck = packet.getItemStack().isPresent() && packet.getItemStack().get().isEmpty()
+                final boolean failedItemCheck = packet.getItemStack().isPresent() && isEmpty(packet.getItemStack().get())
                         // ViaVersion can sometimes cause this part of the check to false
                         && player.getClientVersion().isOlderThan(ClientVersion.V_1_9);
 
@@ -57,5 +58,9 @@ public class BadPacketsU extends Check implements PacketCheck {
                 }
             }
         }
+    }
+
+    private boolean isEmpty(ItemStack itemStack) {
+        return itemStack.getType() == null || itemStack.getType() == ItemTypes.AIR;
     }
 }

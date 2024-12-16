@@ -10,7 +10,6 @@ import it.unimi.dsi.fastutil.doubles.DoubleList;
 import org.bukkit.Location;
 import org.bukkit.util.Vector;
 
-import java.util.ArrayList;
 import java.util.List;
 
 public class SimpleCollisionBox implements CollisionBox {
@@ -20,10 +19,23 @@ public class SimpleCollisionBox implements CollisionBox {
     public double minX, minY, minZ, maxX, maxY, maxZ;
     private boolean isFullBlock = false;
 
+    SimpleCollisionBox[] boxes = new SimpleCollisionBox[ComplexCollisionBox.DEFAULT_MAX_COLLISION_BOX_SIZE];
+
     public SimpleCollisionBox() {
         this(0, 0, 0, 0, 0, 0, false);
     }
 
+    /**
+     * Creates a box defined by two points in 3d space; used to represent hitboxes and collision boxes.
+     * If your min/max values are > 1 you should probably check out {@link HexCollisionBox}
+     * @param minX x position of first corner
+     * @param minY y position of first corner
+     * @param minZ z position of first corner
+     * @param maxX x position of second corner
+     * @param maxY y position of second corner
+     * @param maxZ z position of second corner
+     * @param fullBlock - whether on not the box is a perfect 1x1x1 sized block
+     */
     public SimpleCollisionBox(double minX, double minY, double minZ, double maxX, double maxY, double maxZ, boolean fullBlock) {
         this.minX = minX;
         this.maxX = maxX;
@@ -47,7 +59,17 @@ public class SimpleCollisionBox implements CollisionBox {
         this(minX, minY, minZ, minX + 1, minY + 1, minZ + 1, true);
     }
 
-    // Use only if you don't know the fullBlock status, which is rare
+    /**
+     * Creates a box defined by two points in 3d space; used to represent hitboxes and collision boxes.
+     * If your min/max values are > 1 you should probably check out {@link HexCollisionBox}
+     * Use only if you don't know the fullBlock status, which is rare
+     * @param minX x position of first corner
+     * @param minY y position of first corner
+     * @param minZ z position of first corner
+     * @param maxX x position of second corner
+     * @param maxY y position of second corner
+     * @param maxZ z position of second corner
+     */
     public SimpleCollisionBox(double minX, double minY, double minZ, double maxX, double maxY, double maxZ) {
         this.minX = minX;
         this.maxX = maxX;
@@ -142,6 +164,16 @@ public class SimpleCollisionBox implements CollisionBox {
         return vectors;
     }
 
+    public CollisionBox encompass(SimpleCollisionBox other) {
+        this.minX = Math.min(this.minX, other.minX);
+        this.minY = Math.min(this.minY, other.minY);
+        this.minZ = Math.min(this.minZ, other.minZ);
+        this.maxX = Math.max(this.maxX, other.maxX);
+        this.maxY = Math.max(this.maxY, other.maxY);
+        this.maxZ = Math.max(this.maxZ, other.maxZ);
+        return this;
+    }
+
     public SimpleCollisionBox expandToAbsoluteCoordinates(double x, double y, double z) {
         return expandToCoordinate(x - ((minX + maxX) / 2), y - ((minY + maxY) / 2), z - ((minZ + maxZ) / 2));
     }
@@ -182,6 +214,11 @@ public class SimpleCollisionBox implements CollisionBox {
     }
 
     @Override
+    public CollisionBox union(SimpleCollisionBox other) {
+        return new ComplexCollisionBox(2, this, other);
+    }
+
+    @Override
     public boolean isCollided(SimpleCollisionBox other) {
         return other.maxX >= this.minX && other.minX <= this.maxX
                 && other.maxY >= this.minY && other.minY <= this.maxY
@@ -201,11 +238,10 @@ public class SimpleCollisionBox implements CollisionBox {
             return isIntersected((SimpleCollisionBox) other);
         }
 
-        List<SimpleCollisionBox> boxes = new ArrayList<>();
-        other.downCast(boxes);
+        int size = other.downCast(boxes);
 
-        for (SimpleCollisionBox box : boxes) {
-            if (isIntersected(box)) return true;
+        for (int i = 0; i < size; i++) {
+            if (isIntersected(boxes[i])) return true;
         }
 
         return false;
@@ -237,6 +273,12 @@ public class SimpleCollisionBox implements CollisionBox {
     }
 
     @Override
+    public int downCast(SimpleCollisionBox[] list) {
+        list[0] = this;
+        return 1;
+    }
+
+    @Override
     public boolean isNull() {
         return false;
     }
@@ -254,19 +296,13 @@ public class SimpleCollisionBox implements CollisionBox {
 
         // Get the direction of block we are trying to connect to -> towards the block that is trying to connect
         final BlockFace faceToSourceConnector = axis.getOppositeFace();
-        switch (faceToSourceConnector) {
-            case EAST:
-            case WEST:
-                return this.minX == 0 && this.maxX == 1;
-            case UP:
-            case DOWN:
-                return this.minY == 0 && this.maxY == 1;
-            case NORTH:
-            case SOUTH:
-                return this.minZ == 0 && this.maxZ == 1;
-        }
+        return switch (faceToSourceConnector) {
+            case EAST, WEST -> this.minX == 0 && this.maxX == 1;
+            case UP, DOWN -> this.minY == 0 && this.maxY == 1;
+            case NORTH, SOUTH -> this.minZ == 0 && this.maxZ == 1;
+            default -> false;
+        };
 
-        return false;
     }
 
     public boolean isFullBlockNoCache() {

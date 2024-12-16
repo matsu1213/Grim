@@ -2,21 +2,22 @@ package ac.grim.grimac.predictionengine;
 
 import ac.grim.grimac.player.GrimPlayer;
 import ac.grim.grimac.utils.collisions.datatypes.SimpleCollisionBox;
+import ac.grim.grimac.utils.data.attribute.ValuedAttribute;
 import ac.grim.grimac.utils.data.packetentity.PacketEntity;
 import ac.grim.grimac.utils.enums.FluidTag;
 import ac.grim.grimac.utils.enums.Pose;
 import ac.grim.grimac.utils.latency.CompensatedEntities;
 import ac.grim.grimac.utils.math.GrimMath;
 import ac.grim.grimac.utils.nmsutil.*;
-import com.github.retrooper.packetevents.PacketEvents;
-import com.github.retrooper.packetevents.manager.server.ServerVersion;
+import com.github.retrooper.packetevents.protocol.attribute.Attributes;
 import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.protocol.world.BlockFace;
 import com.github.retrooper.packetevents.protocol.world.states.type.StateType;
 import com.github.retrooper.packetevents.util.Vector3d;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerUpdateAttributes;
-import org.bukkit.World;
 import org.bukkit.util.Vector;
+
+import java.util.Optional;
 
 public class PlayerBaseTick {
     GrimPlayer player;
@@ -30,8 +31,9 @@ public class PlayerBaseTick {
     }
 
     protected static SimpleCollisionBox getBoundingBoxForPose(GrimPlayer player, Pose pose, double x, double y, double z) {
-        final float width = pose.width * player.compensatedEntities.getSelf().scale;
-        final float height = pose.height * player.compensatedEntities.getSelf().scale;
+        final float scale = (float) player.compensatedEntities.getSelf().getAttributeValue(Attributes.SCALE);
+        final float width = pose.width * scale;
+        final float height = pose.height * scale;
         float radius = width / 2.0F;
         return new SimpleCollisionBox(x - radius, y, z - radius, x + radius, y + height, z + radius, false);
     }
@@ -62,6 +64,8 @@ public class PlayerBaseTick {
             player.baseTickAddVector(waterPushVector);
             player.trackBaseTickAddition(waterPushVector);
         }
+
+        final boolean wasSlowMovement = player.isSlowMovement;
 
         if (player.getClientVersion().isOlderThanOrEquals(ClientVersion.V_1_13_2)) {
             // 1.13.2 and below logic: If crouching, then slow movement, simple!
@@ -128,10 +132,10 @@ public class PlayerBaseTick {
 
     public void updateInWaterStateAndDoFluidPushing() {
         updateInWaterStateAndDoWaterCurrentPushing();
-        double d = player.bukkitPlayer != null && player.bukkitPlayer.getWorld().getEnvironment() == World.Environment.NETHER ? 0.007 : 0.0023333333333333335;
+        final double multiplier = player.dimensionType.isUltraWarm() ? 0.007 : 0.0023333333333333335;
         // 1.15 and below clients use block collisions to check for being in lava
         if (player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_16))
-            player.wasTouchingLava = this.updateFluidHeightAndDoFluidPushing(FluidTag.LAVA, d);
+            player.wasTouchingLava = this.updateFluidHeightAndDoFluidPushing(FluidTag.LAVA, multiplier);
             // 1.13 and below clients use this stupid method to check if in lava
         else if (player.getClientVersion().isOlderThan(ClientVersion.V_1_14)) {
             SimpleCollisionBox playerBox = player.boundingBox.copy().expand(-0.1F, -0.4F, -0.1F);
@@ -143,8 +147,15 @@ public class PlayerBaseTick {
         // Pre-1.17 clients don't have powder snow and therefore don't desync
         if (player.getClientVersion().isOlderThanOrEquals(ClientVersion.V_1_16_4)) return;
 
+        final ValuedAttribute playerSpeed = player.compensatedEntities.getSelf().getAttribute(Attributes.MOVEMENT_SPEED).get();
+
+        // Might be null after respawn?
+        final Optional<WrapperPlayServerUpdateAttributes.Property> property = playerSpeed.property();
+        if (property.isEmpty()) return;
+
         // The client first desync's this attribute
-        player.compensatedEntities.getSelf().playerSpeed.getModifiers().removeIf(modifier -> modifier.getUUID().equals(CompensatedEntities.SNOW_MODIFIER_UUID) || modifier.getName().getKey().equals("powder_snow"));
+        property.get().getModifiers().removeIf(modifier -> modifier.getUUID().equals(CompensatedEntities.SNOW_MODIFIER_UUID) || modifier.getName().getKey().equals("powder_snow"));
+        playerSpeed.recalculate();
 
         // And then re-adds it using purely what the server has sent it
         StateType type = BlockProperties.getOnPos(player, player.mainSupportingBlockData, new Vector3d(player.x, player.y, player.z));
@@ -156,7 +167,9 @@ public class PlayerBaseTick {
                 // Remember, floats are not commutative, we must do it in the client's specific order
                 float percentFrozen = (float) Math.min(i, ticksToFreeze) / (float) ticksToFreeze;
                 float percentFrozenReducedToSpeed = -0.05F * percentFrozen;
-                player.compensatedEntities.getSelf().playerSpeed.getModifiers().add(new WrapperPlayServerUpdateAttributes.PropertyModifier(CompensatedEntities.SNOW_MODIFIER_UUID, percentFrozenReducedToSpeed, WrapperPlayServerUpdateAttributes.PropertyModifier.Operation.ADDITION));
+
+                property.get().getModifiers().add(new WrapperPlayServerUpdateAttributes.PropertyModifier(CompensatedEntities.SNOW_MODIFIER_UUID, percentFrozenReducedToSpeed, WrapperPlayServerUpdateAttributes.PropertyModifier.Operation.ADDITION));
+                playerSpeed.recalculate();
             }
         }
     }
@@ -255,13 +268,14 @@ public class PlayerBaseTick {
 
 
     private void moveTowardsClosestSpace(double xPosition, double zPosition) {
-        player.boundingBox = player.boundingBox.expand(0.03, 0, 0.03); // 0.03... thanks mojang!
+        double movementThreshold = player.getMovementThreshold();
+        player.boundingBox = player.boundingBox.expand(movementThreshold, 0, movementThreshold); // 0.03... thanks mojang!
         if (player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_14)) {
             moveTowardsClosestSpaceModern(xPosition, zPosition);
         } else {
             moveTowardsClosestSpaceLegacy(xPosition, zPosition);
         }
-        player.boundingBox = player.boundingBox.expand(-0.03, 0, -0.03);
+        player.boundingBox = player.boundingBox.expand(-movementThreshold, 0, -movementThreshold);
     }
 
     // Mojang is incompetent and this will push the player out a lot when using elytras
@@ -347,22 +361,12 @@ public class PlayerBaseTick {
             double d7 = direction2 == BlockFace.WEST || direction2 == BlockFace.EAST ? relativeXMovement : relativeZMovement;
             d6 = direction2 == BlockFace.EAST || direction2 == BlockFace.SOUTH ? 1.0 - d7 : d7;
             // d7 and d6 flip the movement direction based on desired movement direction
-            boolean doesSuffocate;
-            switch (direction2) {
-                case EAST:
-                    doesSuffocate = this.suffocatesAt(blockX + 1, blockZ);
-                    break;
-                case WEST:
-                    doesSuffocate = this.suffocatesAt(blockX - 1, blockZ);
-                    break;
-                case NORTH:
-                    doesSuffocate = this.suffocatesAt(blockX, blockZ - 1);
-                    break;
-                default:
-                case SOUTH:
-                    doesSuffocate = this.suffocatesAt(blockX, blockZ + 1);
-                    break;
-            }
+            boolean doesSuffocate = switch (direction2) {
+                case EAST -> this.suffocatesAt(blockX + 1, blockZ);
+                case WEST -> this.suffocatesAt(blockX - 1, blockZ);
+                case NORTH -> this.suffocatesAt(blockX, blockZ - 1);
+                default -> this.suffocatesAt(blockX, blockZ + 1);
+            };
 
             if (d6 >= lowestValue || doesSuffocate) continue;
             lowestValue = d6;

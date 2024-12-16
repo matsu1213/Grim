@@ -8,7 +8,7 @@ import com.github.retrooper.packetevents.event.PacketReceiveEvent;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientInteractEntity;
 
-@CheckData(name = "BadPacketsC")
+@CheckData(name = "BadPacketsC", description = "Interacted with self")
 public class BadPacketsC extends Check implements PacketCheck {
     public BadPacketsC(GrimPlayer player) {
         super(player);

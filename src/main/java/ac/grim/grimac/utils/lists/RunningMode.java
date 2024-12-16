@@ -1,9 +1,9 @@
 package ac.grim.grimac.utils.lists;
 
 import ac.grim.grimac.utils.data.Pair;
+import it.unimi.dsi.fastutil.doubles.Double2IntMap;
+import it.unimi.dsi.fastutil.doubles.Double2IntOpenHashMap;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
 
@@ -12,7 +12,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 // This class calculates the running mode of a list in best case o(1) worst case o(n) time.
 public class RunningMode {
     Queue<Double> addList;
-    Map<Double, Integer> popularityMap = new HashMap<>();
+    Double2IntMap popularityMap = new Double2IntOpenHashMap();
     int maxSize;
 
     private static final double threshold = 1e-3;
@@ -34,10 +34,10 @@ public class RunningMode {
     public void add(double value) {
         pop();
 
-        for (Map.Entry<Double, Integer> entry : popularityMap.entrySet()) {
-            if (Math.abs(entry.getKey() - value) < threshold) {
-                entry.setValue(entry.getValue() + 1);
-                addList.add(entry.getKey());
+        for (Double2IntMap.Entry entry : popularityMap.double2IntEntrySet()) {
+            if (Math.abs(entry.getDoubleKey() - value) < threshold) {
+                entry.setValue(entry.getIntValue() + 1);
+                addList.add(entry.getDoubleKey());
                 return;
             }
         }
@@ -49,7 +49,7 @@ public class RunningMode {
 
     private void pop() {
         if (addList.size() >= maxSize) {
-            Double type = addList.poll();
+            double type = addList.poll();
             int popularity = popularityMap.get(type);  // Being null isn't possible
             if (popularity == 1) {
                 popularityMap.remove(type); // Make sure not to leak memory
@@ -63,10 +63,10 @@ public class RunningMode {
         int max = 0;
         Double mostPopular = null;
 
-        for (Map.Entry<Double, Integer> entry : popularityMap.entrySet()) {
-            if (entry.getValue() > max) {
-                max = entry.getValue();
-                mostPopular = entry.getKey();
+        for (Double2IntMap.Entry entry : popularityMap.double2IntEntrySet()) {
+            if (entry.getIntValue() > max) {
+                max = entry.getIntValue();
+                mostPopular = entry.getDoubleKey();
             }
         }
 

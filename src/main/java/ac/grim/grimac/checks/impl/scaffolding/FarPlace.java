@@ -6,13 +6,12 @@ import ac.grim.grimac.player.GrimPlayer;
 import ac.grim.grimac.utils.anticheat.update.BlockPlace;
 import ac.grim.grimac.utils.collisions.datatypes.SimpleCollisionBox;
 import ac.grim.grimac.utils.math.VectorUtils;
-import com.github.retrooper.packetevents.protocol.player.ClientVersion;
-import com.github.retrooper.packetevents.protocol.player.GameMode;
+import com.github.retrooper.packetevents.protocol.attribute.Attributes;
 import com.github.retrooper.packetevents.protocol.world.states.type.StateTypes;
 import com.github.retrooper.packetevents.util.Vector3i;
 import org.bukkit.util.Vector;
 
-@CheckData(name = "FarPlace")
+@CheckData(name = "FarPlace", description = "Placing blocks from too far away")
 public class FarPlace extends BlockPlaceCheck {
     public FarPlace(GrimPlayer player) {
         super(player);
@@ -25,7 +24,8 @@ public class FarPlace extends BlockPlaceCheck {
         if (place.getMaterial() == StateTypes.SCAFFOLDING) return;
 
         double min = Double.MAX_VALUE;
-        for (double d : player.getPossibleEyeHeights()) {
+        final double[] possibleEyeHeights = player.getPossibleEyeHeights();
+        for (double d : possibleEyeHeights) {
             SimpleCollisionBox box = new SimpleCollisionBox(blockPos);
             Vector eyes = new Vector(player.x, player.y + d, player.z);
             Vector best = VectorUtils.cutBoxToVector(eyes, box);
@@ -34,7 +34,7 @@ public class FarPlace extends BlockPlaceCheck {
 
         // getPickRange() determines this?
         // With 1.20.5+ the new attribute determines creative mode reach using a modifier
-        double maxReach = player.compensatedEntities.getSelf().getBlockInteractRange();
+        double maxReach = player.compensatedEntities.getSelf().getAttributeValue(Attributes.BLOCK_INTERACTION_RANGE);
         double threshold = player.getMovementThreshold();
         maxReach += Math.hypot(threshold, threshold);
 

@@ -57,6 +57,7 @@ Punishments:
     checks:
       - "EntityControl"
       - "NoSlow"
+      - "MultiActions"
       - "Place"
       - "Baritone"
       - "FastBreak"
@@ -68,6 +69,7 @@ Punishments:
   Combat:
     remove-violations-after: 300
     checks:
+      - "Interact"
       - "Killaura"
       - "Aim"
     commands:

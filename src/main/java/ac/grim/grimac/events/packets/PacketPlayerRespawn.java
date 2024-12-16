@@ -3,6 +3,7 @@ package ac.grim.grimac.events.packets;
 import ac.grim.grimac.GrimAPI;
 import ac.grim.grimac.checks.impl.badpackets.BadPacketsE;
 import ac.grim.grimac.checks.impl.badpackets.BadPacketsF;
+import ac.grim.grimac.checks.impl.badpackets.BadPacketsG;
 import ac.grim.grimac.player.GrimPlayer;
 import ac.grim.grimac.utils.data.TrackerData;
 import ac.grim.grimac.utils.data.packetentity.PacketEntitySelf;
@@ -55,9 +56,10 @@ public class PacketPlayerRespawn extends PacketListenerAbstract {
 
     private boolean hasFlag(WrapperPlayServerRespawn respawn, byte flag) {
         // This packet was added in 1.16
-        // On versions older than 1.16, via keeps all data.
-        if (PacketEvents.getAPI().getServerManager().getVersion().isOlderThan(ServerVersion.V_1_16)) {
-            return true;
+        // On versions older than 1.15, via does not keep all data.
+        // https://github.com/ViaVersion/ViaVersion/blob/master/common/src/main/java/com/viaversion/viaversion/protocols/v1_15_2to1_16/rewriter/EntityPacketRewriter1_16.java#L124
+        if (PacketEvents.getAPI().getServerManager().getVersion().isOlderThan(ServerVersion.V_1_15)) {
+            return false;
         }
         return (respawn.getKeptData() & flag) != 0;
     }
@@ -103,10 +105,10 @@ public class PacketPlayerRespawn extends PacketListenerAbstract {
             WrapperPlayServerJoinGame joinGame = new WrapperPlayServerJoinGame(event);
             player.gamemode = joinGame.getGameMode();
             player.entityID = joinGame.getEntityId();
-            player.dimension = joinGame.getDimension();
+            player.dimensionType = joinGame.getDimensionType();
 
             if (PacketEvents.getAPI().getServerManager().getVersion().isOlderThan(ServerVersion.V_1_17)) return;
-            player.compensatedWorld.setDimension(joinGame.getDimension(), event.getUser());
+            player.compensatedWorld.setDimension(joinGame.getDimensionType(), event.getUser());
         }
 
         if (event.getPacketType() == PacketType.Play.Server.RESPAWN) {
@@ -129,19 +131,30 @@ public class PacketPlayerRespawn extends PacketListenerAbstract {
                 player.compensatedEntities.serverPositionsMap.clear();
             }
 
-            // TODO: What does keep all metadata do?
             player.latencyUtils.addRealTimeTask(player.lastTransactionSent.get() + 1, () -> {
-                player.isSneaking = false;
+                // From 1.16 to 1.19, this doesn't get set to false for whatever reason
+                if (player.getClientVersion().isOlderThan(ClientVersion.V_1_16) || player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_20)) {
+                    player.isSneaking = false;
+                }
+
                 player.lastOnGround = false;
                 player.onGround = false;
                 player.isInBed = false;
-                player.packetStateData.slowedByUsingItem = player.packetStateData.wasSlowedByUsingItem = false;
+                player.packetStateData.setSlowedByUsingItem(false);
                 player.packetStateData.packetPlayerOnGround = false; // If somewhere else pulls last ground to fix other issues
                 player.packetStateData.lastClaimedPosition = new Vector3d();
                 player.filterMojangStupidityOnMojangStupidity = new Vector3d();
 
+                final boolean keepTrackedData = this.hasFlag(respawn, KEEP_TRACKED_DATA);
+
+                if (!keepTrackedData) {
+                    player.powderSnowFrozenTicks = 0;
+                    player.compensatedEntities.getSelf().hasGravity = true;
+                    player.playerEntityHasGravity = true;
+                }
+
                 if (player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_19_4)) {
-                    if (!this.hasFlag(respawn, KEEP_TRACKED_DATA)) {
+                    if (!keepTrackedData) {
                         player.isSprinting = false;
                     }
                 } else {
@@ -149,6 +162,7 @@ public class PacketPlayerRespawn extends PacketListenerAbstract {
                 }
 
                 player.checkManager.getPacketCheck(BadPacketsE.class).handleRespawn(); // Reminder ticks reset
+                player.checkManager.getPacketCheck(BadPacketsG.class).handleRespawn();
 
                 // compensate for immediate respawn gamerule
                 if (player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_15)) {
@@ -163,7 +177,7 @@ public class PacketPlayerRespawn extends PacketListenerAbstract {
                     player.compensatedWorld.chunks.clear();
                     player.compensatedWorld.isRaining = false;
                 }
-                player.dimension = respawn.getDimension();
+                player.dimensionType = respawn.getDimensionType();
 
                 player.compensatedEntities.serverPlayerVehicle = null; // All entities get removed on respawn
                 player.compensatedEntities.playerEntity = new PacketEntitySelf(player, player.compensatedEntities.playerEntity);
@@ -180,20 +194,12 @@ public class PacketPlayerRespawn extends PacketListenerAbstract {
                 player.clientVelocity = new Vector();
                 player.gamemode = respawn.getGameMode();
                 if (PacketEvents.getAPI().getServerManager().getVersion().isNewerThanOrEquals(ServerVersion.V_1_17)) {
-                    player.compensatedWorld.setDimension(respawn.getDimension(), event.getUser());
+                    player.compensatedWorld.setDimension(respawn.getDimensionType(), event.getUser());
                 }
 
-                // TODO And there should probably be some attribute holder that we can just call reset() on.
                 if (player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_16) && !this.hasFlag(respawn, KEEP_ATTRIBUTES)) {
                     // Reset attributes if not kept
-                    final PacketEntitySelf self = player.compensatedEntities.getSelf();
-                    self.gravityAttribute = 0.08d;
-                    self.stepHeight = 0.6f;
-                    self.scale = 1.0f;
-                    self.setJumpStrength(0.42f);
-                    self.setBreakSpeedMultiplier(1.0f);
-                    self.setBlockInteractRange(4.5);
-                    self.setEntityInteractRange(3.0);
+                    player.compensatedEntities.getSelf().resetAttributes();
                     player.compensatedEntities.hasSprintingAttributeEnabled = false;
                 }
             });
@@ -201,7 +207,8 @@ public class PacketPlayerRespawn extends PacketListenerAbstract {
     }
 
     private boolean isWorldChange(GrimPlayer player, WrapperPlayServerRespawn respawn) {
-       return respawn.getDimension().getId() != player.dimension.getId() || !Objects.equals(respawn.getDimension().getDimensionName(), player.dimension.getDimensionName()) || !Objects.equals(respawn.getDimension().getAttributes(), player.dimension.getAttributes());
+        ClientVersion version = PacketEvents.getAPI().getServerManager().getVersion().toClientVersion();
+        return respawn.getDimensionType().getId(version) != player.dimensionType.getId(version)
+                || !Objects.equals(respawn.getDimensionType().getName(), player.dimensionType.getName());
     }
-
 }
