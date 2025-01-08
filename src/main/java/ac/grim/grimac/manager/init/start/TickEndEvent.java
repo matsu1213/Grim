@@ -5,9 +5,10 @@ import ac.grim.grimac.manager.init.Initable;
 import ac.grim.grimac.player.GrimPlayer;
 import ac.grim.grimac.utils.anticheat.LogUtil;
 import ac.grim.grimac.utils.lists.HookedListWrapper;
+import com.github.retrooper.packetevents.PacketEvents;
+import com.github.retrooper.packetevents.manager.server.ServerVersion;
 import com.github.retrooper.packetevents.util.reflection.Reflection;
 import io.github.retrooper.packetevents.util.SpigotReflectionUtil;
-import org.bukkit.Bukkit;
 import sun.misc.Unsafe;
 
 import java.lang.reflect.Field;
@@ -32,6 +33,10 @@ public class TickEndEvent implements Initable {
             return;
         }
 
+        if (PacketEvents.getAPI().getServerManager().getVersion().isNewerThan(ServerVersion.V_1_11_2) && !Boolean.getBoolean("paper.explicit-flush")) {
+            LogUtil.warn("Reach.enable-post-packet=true but paper.explicit-flush=false, add \"-Dpaper.explicit-flush=true\" to your server's startup flags for fully functional extra reach accuracy.");
+        }
+
         // Inject so we can add the final transaction pre-flush event
         try {
             Object connection = SpigotReflectionUtil.getMinecraftServerConnectionInstance();
@@ -44,7 +49,7 @@ public class TickEndEvent implements Initable {
             // but whatever.  At least plugins can't break it, I guess.
             //
             // Pledge injects into another list, so we should be safe injecting into this one
-            List<?> wrapper = Collections.synchronizedList(new HookedListWrapper<Object>(endOfTickObject) {
+            List<?> wrapper = Collections.synchronizedList(new HookedListWrapper<>(endOfTickObject) {
                 @Override
                 public void onIterator() {
                     hasTicked = true;

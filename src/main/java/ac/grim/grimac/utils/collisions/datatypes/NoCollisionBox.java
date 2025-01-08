@@ -10,6 +10,11 @@ public class NoCollisionBox implements CollisionBox {
     }
 
     @Override
+    public CollisionBox union(SimpleCollisionBox other) {
+        return other;
+    }
+
+    @Override
     public boolean isCollided(SimpleCollisionBox other) {
         return false;
     }
@@ -26,6 +31,9 @@ public class NoCollisionBox implements CollisionBox {
 
     @Override
     public void downCast(List<SimpleCollisionBox> list) { /**/ }
+
+    @Override
+    public int downCast(SimpleCollisionBox[] list) { return 0; }
 
     @Override
     public boolean isNull() {

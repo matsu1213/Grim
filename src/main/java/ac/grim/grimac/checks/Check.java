@@ -2,18 +2,21 @@ package ac.grim.grimac.checks;
 
 import ac.grim.grimac.GrimAPI;
 import ac.grim.grimac.api.AbstractCheck;
+import ac.grim.grimac.api.config.ConfigManager;
 import ac.grim.grimac.api.events.FlagEvent;
 import ac.grim.grimac.player.GrimPlayer;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 import com.github.retrooper.packetevents.protocol.packettype.PacketTypeCommon;
-import github.scarsz.configuralize.DynamicConfig;
+import com.github.retrooper.packetevents.protocol.player.ClientVersion;
+import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerFlying;
+import io.github.retrooper.packetevents.util.folia.FoliaScheduler;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.Bukkit;
 
 // Class from https://github.com/Tecnio/AntiCheatBase/blob/master/src/main/java/me/tecnio/anticheat/check/Check.java
 @Getter
-public class Check implements AbstractCheck {
+public class Check extends GrimProcessor implements AbstractCheck {
     protected final GrimPlayer player;
 
     public double violations;
@@ -23,11 +26,13 @@ public class Check implements AbstractCheck {
     private String checkName;
     private String configName;
     private String alternativeName;
+    private String displayName;
     private String description;
 
     private boolean experimental;
     @Setter
     private boolean isEnabled;
+    private boolean exempted;
 
     public Check(final GrimPlayer player) {
         this.player = player;
@@ -45,13 +50,21 @@ public class Check implements AbstractCheck {
             this.alternativeName = checkData.alternativeName();
             this.experimental = checkData.experimental();
             this.description = checkData.description();
+            this.displayName = this.checkName;
         }
 
         reload();
     }
 
     public boolean shouldModifyPackets() {
-        return isEnabled && !player.disableGrim && !player.noModifyPacketPermission;
+        return isEnabled && !player.disableGrim && !player.noModifyPacketPermission && !exempted;
+    }
+
+    public void updateExempted() {
+        if (player.bukkitPlayer == null || checkName == null) return;
+        FoliaScheduler.getEntityScheduler().run(player.bukkitPlayer, GrimAPI.INSTANCE.getPlugin(),
+                t -> exempted = player.bukkitPlayer.hasPermission("grim.exempt." + checkName.toLowerCase()),
+                () -> {});
     }
 
     public final boolean flagAndAlert(String verbose) {
@@ -67,16 +80,21 @@ public class Check implements AbstractCheck {
     }
 
     public final boolean flag() {
-        if (player.disableGrim || (experimental && !GrimAPI.INSTANCE.getConfigManager().isExperimentalChecks()))
+        return flag("");
+    }
+
+    private long lastViolationTime;
+
+    public final boolean flag(String verbose) {
+        if (player.disableGrim || (experimental && !player.isExperimentalChecks()) || exempted)
             return false; // Avoid calling event if disabled
 
-        FlagEvent event = new FlagEvent(player, this);
+        FlagEvent event = new FlagEvent(player, this, verbose);
         Bukkit.getPluginManager().callEvent(event);
         if (event.isCancelled()) return false;
 
-
         player.punishmentManager.handleViolation(this);
-
+        lastViolationTime = System.currentTimeMillis();
         violations++;
         return true;
     }
@@ -93,19 +111,25 @@ public class Check implements AbstractCheck {
         violations = Math.max(0, violations - decay);
     }
 
-    public void reload() {
-        decay = getConfig().getDoubleElse(configName + ".decay", decay);
-        setbackVL = getConfig().getDoubleElse(configName + ".setbackvl", setbackVL);
+    @Override
+    public void reload(ConfigManager configuration) {
+        decay = configuration.getDoubleElse(configName + ".decay", decay);
+        setbackVL = configuration.getDoubleElse(configName + ".setbackvl", setbackVL);
+        displayName = configuration.getStringElse(configName + ".displayname", checkName);
+        description = configuration.getStringElse(configName + ".description", description);
 
         if (setbackVL == -1) setbackVL = Double.MAX_VALUE;
+        updateExempted();
+        onReload(configuration);
+    }
+
+    @Override
+    public void onReload(ConfigManager config) {
+
     }
 
     public boolean alert(String verbose) {
         return player.punishmentManager.handleAlert(player, verbose, this);
-    }
-
-    public DynamicConfig getConfig() {
-        return GrimAPI.INSTANCE.getConfigManager().getConfig();
     }
 
     public boolean setbackIfAboveSetbackVL() {
@@ -128,5 +152,37 @@ public class Check implements AbstractCheck {
                 packetType == PacketType.Play.Client.WINDOW_CONFIRMATION;
     }
 
-}
+    public boolean isFlying(PacketTypeCommon packetType) {
+        return WrapperPlayClientPlayerFlying.isFlying(packetType);
+    }
 
+    public boolean isUpdate(PacketTypeCommon packetType) {
+        return isFlying(packetType)
+                || packetType == PacketType.Play.Client.CLIENT_TICK_END
+                || isTransaction(packetType);
+    }
+
+    public boolean isTickPacket(PacketTypeCommon packetType) {
+        if (isTickPacketIncludingNonMovement(packetType)) {
+            if (isFlying(packetType)) {
+                return !player.packetStateData.lastPacketWasTeleport && !player.packetStateData.lastPacketWasOnePointSeventeenDuplicate;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    public boolean isTickPacketIncludingNonMovement(PacketTypeCommon packetType) {
+        // On 1.21.2+ fall back to the TICK_END packet IF the player did not send a movement packet for their tick
+        // TickTimer checks to see if player did not send a tick end packet before new flying packet is sent
+        if (player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_21_2)
+                && !player.packetStateData.didSendMovementBeforeTickEnd) {
+            if (packetType == PacketType.Play.Client.CLIENT_TICK_END) {
+                return true;
+            }
+        }
+
+        return isFlying(packetType);
+    }
+
+}

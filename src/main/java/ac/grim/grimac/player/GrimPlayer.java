@@ -3,19 +3,27 @@ package ac.grim.grimac.player;
 import ac.grim.grimac.GrimAPI;
 import ac.grim.grimac.api.AbstractCheck;
 import ac.grim.grimac.api.GrimUser;
+import ac.grim.grimac.api.config.ConfigManager;
+import ac.grim.grimac.api.feature.FeatureManager;
+import ac.grim.grimac.api.handler.ResyncHandler;
+import ac.grim.grimac.checks.Check;
 import ac.grim.grimac.checks.impl.aim.processor.AimProcessor;
 import ac.grim.grimac.checks.impl.misc.ClientBrand;
 import ac.grim.grimac.checks.impl.misc.TransactionOrder;
 import ac.grim.grimac.events.packets.CheckManagerListener;
 import ac.grim.grimac.manager.*;
+import ac.grim.grimac.manager.player.features.FeatureManagerImpl;
+import ac.grim.grimac.manager.player.handlers.BukkitResyncHandler;
 import ac.grim.grimac.predictionengine.MovementCheckRunner;
 import ac.grim.grimac.predictionengine.PointThreeEstimator;
 import ac.grim.grimac.predictionengine.UncertaintyHandler;
 import ac.grim.grimac.utils.anticheat.LogUtil;
+import ac.grim.grimac.utils.change.PlayerBlockHistory;
 import ac.grim.grimac.utils.collisions.datatypes.SimpleCollisionBox;
 import ac.grim.grimac.utils.data.*;
 import ac.grim.grimac.utils.data.packetentity.PacketEntity;
 import ac.grim.grimac.utils.data.packetentity.PacketEntitySelf;
+import ac.grim.grimac.utils.data.tags.SyncedTags;
 import ac.grim.grimac.utils.enums.FluidTag;
 import ac.grim.grimac.utils.enums.Pose;
 import ac.grim.grimac.utils.latency.*;
@@ -28,12 +36,13 @@ import com.github.retrooper.packetevents.event.PacketSendEvent;
 import com.github.retrooper.packetevents.manager.server.ServerVersion;
 import com.github.retrooper.packetevents.netty.channel.ChannelHelper;
 import com.github.retrooper.packetevents.protocol.ConnectionState;
+import com.github.retrooper.packetevents.protocol.attribute.Attributes;
 import com.github.retrooper.packetevents.protocol.entity.type.EntityTypes;
 import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.protocol.player.GameMode;
 import com.github.retrooper.packetevents.protocol.player.User;
 import com.github.retrooper.packetevents.protocol.world.BlockFace;
-import com.github.retrooper.packetevents.protocol.world.Dimension;
+import com.github.retrooper.packetevents.protocol.world.dimension.DimensionType;
 import com.github.retrooper.packetevents.util.Vector3d;
 import com.github.retrooper.packetevents.wrapper.PacketWrapper;
 import com.github.retrooper.packetevents.wrapper.play.server.*;
@@ -44,26 +53,37 @@ import io.github.retrooper.packetevents.adventure.serializer.legacy.LegacyCompon
 import io.github.retrooper.packetevents.util.folia.FoliaScheduler;
 import io.github.retrooper.packetevents.util.viaversion.ViaVersionUtil;
 import io.netty.channel.Channel;
+import lombok.Getter;
+import lombok.Setter;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TranslatableComponent;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.util.Vector;
+import org.jetbrains.annotations.Contract;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 // Everything in this class should be sync'd to the anticheat thread.
 // Put variables sync'd to the netty thread in PacketStateData
 // Variables that need lag compensation should have their own class
 // Soon there will be a generic class for lag compensation
 public class GrimPlayer implements GrimUser {
+    private static final @Nullable Consumer<@NotNull Player> resetActiveBukkitItem;
+    private static final @Nullable Predicate<@NotNull Player> isUsingBukkitItem;
     public UUID playerUUID;
     public final User user;
     public int entityID;
@@ -83,12 +103,14 @@ public class GrimPlayer implements GrimUser {
     public ActionManager actionManager;
     public PunishmentManager punishmentManager;
     public MovementCheckRunner movementCheckRunner;
+    public SyncedTags tagManager;
     // End manager like classes
     public Vector clientVelocity = new Vector();
     PacketTracker packetTracker;
     private long transactionPing = 0;
     public long lastTransSent = 0;
     public long lastTransReceived = 0;
+    @Getter
     private long playerClockAtLeast = System.nanoTime();
     public double lastWasClimbing = 0;
     public boolean canSwimHop = false;
@@ -121,6 +143,7 @@ public class GrimPlayer implements GrimUser {
     public boolean wasSneaking;
     public boolean isSprinting;
     public boolean lastSprinting;
+    public String teamName;
     // The client updates sprinting attribute at end of each tick
     // Don't false if the server update's the player's sprinting status
     public boolean lastSprintingForSpeed;
@@ -156,6 +179,7 @@ public class GrimPlayer implements GrimUser {
     public boolean slightlyTouchingWater = false;
     public boolean wasEyeInWater = false;
     public FluidTag fluidOnEyes;
+    public boolean horizontalCollision;
     public boolean verticalCollision;
     public boolean clientControlledVerticalCollision;
     // Okay, this is our 0.03 detection
@@ -189,11 +213,13 @@ public class GrimPlayer implements GrimUser {
     public int minPlayerAttackSlow = 0;
     public int maxPlayerAttackSlow = 0;
     public GameMode gamemode;
-    public Dimension dimension;
+    public DimensionType dimensionType;
     public Vector3d bedPosition;
     public long lastBlockPlaceUseItem = 0;
     public AtomicInteger cancelledPackets = new AtomicInteger(0);
     public MainSupportingBlockData mainSupportingBlockData = new MainSupportingBlockData(null, false);
+    // possibleEyeHeights[0] = Standing eye heights, [1] = Sneaking. [2] = Elytra, Swimming, and Riptide Trident which only exists in 1.9+
+    public double[][] possibleEyeHeights = new double[3][];
 
     public void onPacketCancel() {
         if (spamThreshold != -1 && cancelledPackets.incrementAndGet() > spamThreshold) {
@@ -205,6 +231,7 @@ public class GrimPlayer implements GrimUser {
 
     public int totalFlyingPacketsSent;
     public Queue<BlockPlaceSnapshot> placeUseItemPackets = new LinkedBlockingQueue<>();
+    public PlayerBlockHistory blockHistory = new PlayerBlockHistory();
     // This variable is for support with test servers that want to be able to disable grim
     // Grim disabler 2022 still working!
     public boolean disableGrim = false;
@@ -212,7 +239,6 @@ public class GrimPlayer implements GrimUser {
     public GrimPlayer(User user) {
         this.user = user;
         this.playerUUID = user.getUUID();
-        onReload();
 
         boundingBox = GetBoundingBox.getBoundingBoxFromPosAndSizeRaw(x, y, z, 0.6f, 1.8f);
 
@@ -222,6 +248,7 @@ public class GrimPlayer implements GrimUser {
         actionManager = new ActionManager(this);
         checkManager = new CheckManager(this);
         punishmentManager = new PunishmentManager(this);
+        tagManager = new SyncedTags(this);
         movementCheckRunner = new MovementCheckRunner(this);
 
         compensatedWorld = new CompensatedWorld(this);
@@ -233,7 +260,26 @@ public class GrimPlayer implements GrimUser {
 
         packetStateData = new PacketStateData();
 
+        uncertaintyHandler.riptideEntities.add(0);
         uncertaintyHandler.collidingEntities.add(0);
+
+        if (getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_14)) {
+            final float scale = (float) compensatedEntities.getSelf().getAttributeValue(Attributes.SCALE);
+            possibleEyeHeights[2] = new double[]{0.4 * scale, 1.62 * scale, 1.27 * scale}; // Elytra, standing, sneaking (1.14)
+            possibleEyeHeights[1] = new double[]{1.27 * scale, 1.62 * scale, 0.4 * scale}; // sneaking (1.14), standing, Elytra
+            possibleEyeHeights[0] = new double[]{1.62 * scale, 1.27 * scale, 0.4 * scale}; // standing, sneaking (1.14), Elytra
+
+        } else if (getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_9)) { // standing, sneaking Elytra
+            possibleEyeHeights[2] = new double[]{0.4, 1.62, 1.54}; // Elytra, standing, sneaking (1.13)
+            possibleEyeHeights[1] = new double[]{1.54, 1.62, 0.4}; // sneaking (1.9-1.13), standing, Elytra
+            possibleEyeHeights[0] = new double[]{1.62, 1.54, 0.4}; // standing, sneaking (1.9-1.13), Elytra
+        } else {
+            possibleEyeHeights[1] = new double[]{(double) (1.62f - 0.08f), (double) (1.62f)}; // sneaking, standing
+            possibleEyeHeights[0] = new double[]{(double) (1.62f), (double) (1.62f - 0.08f)}; // standing, sneaking
+        }
+
+        // reload last
+        reload();
     }
 
     public Set<VectorData> getPossibleVelocities() {
@@ -265,7 +311,7 @@ public class GrimPlayer implements GrimUser {
         // If the player has that client sided riptide thing and has colliding with an entity
         // This was determined in the previous tick but whatever just include the 2 ticks around it
         // for a bit of safety as I doubt people will try to bypass this, it would be a very useless cheat
-        if (riptideSpinAttackTicks >= 0 && Collections.max(uncertaintyHandler.collidingEntities) > 0) {
+        if (riptideSpinAttackTicks >= 0 && Collections.max(uncertaintyHandler.riptideEntities) > 0) {
             possibleMovements.add(new VectorData(clientVelocity.clone().multiply(-0.2), VectorData.VectorType.Trident));
         }
 
@@ -299,7 +345,7 @@ public class GrimPlayer implements GrimUser {
         boolean hasID = false;
         int skipped = 0;
         for (Pair<Short, Long> iterator : transactionsSent) {
-            if (iterator.getFirst() == id) {
+            if (iterator.first() == id) {
                 hasID = true;
                 break;
             }
@@ -310,7 +356,8 @@ public class GrimPlayer implements GrimUser {
             // Transactions that we send don't count towards total limit
             if (packetTracker != null) packetTracker.setIntervalPackets(packetTracker.getIntervalPackets() - 1);
 
-            if (skipped > 0 && System.currentTimeMillis() - joinTime > 5000) checkManager.getPacketCheck(TransactionOrder.class).flagAndAlert("skipped: " + skipped);
+            if (skipped > 0 && System.currentTimeMillis() - joinTime > 5000)
+                checkManager.getPacketCheck(TransactionOrder.class).flagAndAlert("skipped: " + skipped);
 
             do {
                 data = transactionsSent.poll();
@@ -319,9 +366,9 @@ public class GrimPlayer implements GrimUser {
 
                 lastTransactionReceived.incrementAndGet();
                 lastTransReceived = System.currentTimeMillis();
-                transactionPing = (System.nanoTime() - data.getSecond());
-                playerClockAtLeast = data.getSecond();
-            } while (data.getFirst() != id);
+                transactionPing = (System.nanoTime() - data.second());
+                playerClockAtLeast = data.second();
+            } while (data.first() != id);
 
             // A transaction means a new tick, so apply any block places
             CheckManagerListener.handleQueuedPlaces(this, false, 0, 0, System.currentTimeMillis());
@@ -329,7 +376,7 @@ public class GrimPlayer implements GrimUser {
         }
 
         // Were we the ones who sent the packet?
-        return data != null && data.getFirst() == id;
+        return data != null;
     }
 
     public void baseTickAddWaterPushing(Vector vector) {
@@ -347,14 +394,14 @@ public class GrimPlayer implements GrimUser {
     public float getMaxUpStep() {
         final PacketEntitySelf self = compensatedEntities.getSelf();
         final PacketEntity riding = self.getRiding();
-        if (riding == null) return self.stepHeight;
+        if (riding == null) return (float) self.getAttributeValue(Attributes.STEP_HEIGHT);
 
         if (riding.isBoat()) {
             return 0f;
         }
 
         // Pigs, horses, striders, and other vehicles all have 1 stepping height by default
-        return riding.stepHeight;
+        return (float) riding.getAttributeValue(Attributes.STEP_HEIGHT);
     }
 
     public void sendTransaction() {
@@ -391,8 +438,7 @@ public class GrimPlayer implements GrimUser {
                 addTransactionSend(transactionID);
                 user.writePacket(packet);
             }
-        } catch (
-                Exception ignored) { // Fix protocollib + viaversion support by ignoring any errors :) // TODO: Fix this
+        } catch (Exception ignored) { // Fix protocollib + viaversion support by ignoring any errors :) // TODO: Fix this
             // recompile
         }
     }
@@ -406,7 +452,8 @@ public class GrimPlayer implements GrimUser {
     }
 
     public double getEyeHeight() {
-        return pose.eyeHeight;
+        return getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_9) ? pose.eyeHeight
+                : isSneaking ? 1.54f : 1.62f;
     }
 
     public void timedOut() {
@@ -415,8 +462,7 @@ public class GrimPlayer implements GrimUser {
 
     public void disconnect(Component reason) {
         String textReason;
-        if (reason instanceof TranslatableComponent) {
-            TranslatableComponent translatableComponent = (TranslatableComponent) reason;
+        if (reason instanceof TranslatableComponent translatableComponent) {
             textReason = translatableComponent.key();
         } else {
             textReason = LegacyComponentSerializer.legacySection().serialize(reason);
@@ -444,7 +490,7 @@ public class GrimPlayer implements GrimUser {
         if (lastTransSent != 0 && lastTransSent + 80 < System.currentTimeMillis()) {
             sendTransaction(true); // send on netty thread
         }
-        if ((System.nanoTime() - getPlayerClockAtLeast()) > GrimAPI.INSTANCE.getConfigManager().getMaxPingTransaction() * 1e9) {
+        if ((System.nanoTime() - getPlayerClockAtLeast()) > maxTransactionTime * 1e9) {
             timedOut();
         }
 
@@ -498,13 +544,16 @@ public class GrimPlayer implements GrimUser {
         if (bukkitPlayer == null) return;
         this.noModifyPacketPermission = bukkitPlayer.hasPermission("grim.nomodifypacket");
         this.noSetbackPermission = bukkitPlayer.hasPermission("grim.nosetback");
+        FoliaScheduler.getAsyncScheduler().runNow(GrimAPI.INSTANCE.getPlugin(), t -> {
+            for (AbstractCheck check : checkManager.allChecks.values()) {
+                if (check instanceof Check) {
+                    ((Check) check).updateExempted();
+                }
+            }
+        });
     }
 
     private int spamThreshold = 100;
-
-    public void onReload() {
-        spamThreshold = GrimAPI.INSTANCE.getConfigManager().getConfig().getIntElse("packet-spam-threshold", 100);
-    }
 
     public boolean isPointThree() {
         return getClientVersion().isOlderThan(ClientVersion.V_1_18_2);
@@ -516,11 +565,8 @@ public class GrimPlayer implements GrimUser {
 
     public ClientVersion getClientVersion() {
         ClientVersion ver = user.getClientVersion();
-        if (ver == null) {
-            // If temporarily null, assume server version...
-            return ClientVersion.getById(PacketEvents.getAPI().getServerManager().getVersion().getProtocolVersion());
-        }
-        return ver;
+        // If temporarily null, assume server version...
+        return Objects.requireNonNullElseGet(ver, () -> ClientVersion.getById(PacketEvents.getAPI().getServerManager().getVersion().getProtocolVersion()));
     }
 
     // Alright, someone at mojang decided to not send a flying packet every tick with 1.9
@@ -535,27 +581,35 @@ public class GrimPlayer implements GrimUser {
     //     - 3 ticks is a magic value, but it should buffer out incorrect predictions somewhat.
     // 2. The player is in a vehicle
     public boolean isTickingReliablyFor(int ticks) {
-        return (getClientVersion().isOlderThan(ClientVersion.V_1_9) 
+        // 1.21.2+: Tick end packet, on servers 1.21.2+
+        // 1.8-: Flying packet
+        return !canSkipTicks() || (inVehicle()
                 || !uncertaintyHandler.lastPointThree.hasOccurredSince(ticks))
-                || compensatedEntities.getSelf().inVehicle();
+                && !uncertaintyHandler.lastVehicleSwitch.hasOccurredSince(1);
     }
 
-    public boolean canThePlayerBeCloseToZeroMovement(int ticks) {
-        return (!uncertaintyHandler.lastPointThree.hasOccurredSince(ticks));
+    public boolean inVehicle() {
+        return compensatedEntities.getSelf().inVehicle();
     }
 
     public CompensatedInventory getInventory() {
         return checkManager.getInventory();
     }
 
-    public List<Double> getPossibleEyeHeights() { // We don't return sleeping eye height
-        if (getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_14)) { // Elytra, sneaking (1.14), standing
-            final float scale = compensatedEntities.getSelf().scale;
-            return Arrays.asList(0.4 * scale, 1.27 * scale, 1.62 * scale);
-        } else if (getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_9)) { // Elytra, sneaking, standing
-            return Arrays.asList(0.4, 1.54, 1.62);
-        } else { // Only sneaking or standing
-            return Arrays.asList((double) (1.62f - 0.08f), (double) (1.62f));
+    public double[] getPossibleEyeHeights() { // We don't return sleeping eye height
+        // 1.8 Players once again ruin my clean switch-case
+        if (this.getClientVersion().isOlderThan(ClientVersion.V_1_9)) {
+            return this.isSneaking ? this.possibleEyeHeights[1] : this.possibleEyeHeights[0];
+        } else {
+            // 1.8 players just have their pose set to standing all the time
+            return switch (pose) {
+                case FALL_FLYING, // Elytra gliding
+                     SPIN_ATTACK, // Riptide trident
+                     SWIMMING -> // Swimming (includes crawling in 1.14+)
+                        this.possibleEyeHeights[2]; // [swimming/gliding/riptide height, standing height, sneaking height]
+                case NINE_CROUCHING, CROUCHING -> this.possibleEyeHeights[1]; // [sneaking height, standing height, swimming/gliding/riptide height]
+                default -> this.possibleEyeHeights[0]; // [standing height, sneaking height, swimming/gliding/riptide height]
+            };
         }
     }
 
@@ -568,10 +622,6 @@ public class GrimPlayer implements GrimUser {
     public int getKeepAlivePing() {
         if (bukkitPlayer == null) return -1;
         return PacketEvents.getAPI().getPlayerManager().getPing(bukkitPlayer);
-    }
-
-    public long getPlayerClockAtLeast() {
-        return playerClockAtLeast;
     }
 
     public SetbackTeleportUtil getSetbackTeleportUtil() {
@@ -619,9 +669,7 @@ public class GrimPlayer implements GrimUser {
         // Help prevent transaction split
         sendTransaction();
 
-        latencyUtils.addRealTimeTask(lastTransactionSent.get(), () -> {
-            this.vehicleData.wasVehicleSwitch = true;
-        });
+        latencyUtils.addRealTimeTask(lastTransactionSent.get(), () -> this.vehicleData.wasVehicleSwitch = true);
     }
 
     public int getRidingVehicleId() {
@@ -658,9 +706,35 @@ public class GrimPlayer implements GrimUser {
         return getClientVersion().isOlderThanOrEquals(ClientVersion.V_1_10) || (gamemode == GameMode.CREATIVE && compensatedEntities.getSelf().getOpLevel() >= 2);
     }
 
+    @Contract(pure = true)
+    public boolean supportsEndTick() {
+        // TODO: Bypass viaversion
+        return getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_21_2) && PacketEvents.getAPI().getServerManager().getVersion().isNewerThanOrEquals(ServerVersion.V_1_21_2);
+    }
+
+    @Contract(pure = true)
+    public boolean canSkipTicks() {
+        return getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_9) && !supportsEndTick();
+    }
+
     @Override
     public void runSafely(Runnable runnable) {
         ChannelHelper.runInEventLoop(this.user.getChannel(), runnable);
+    }
+
+    @Override
+    public int getLastTransactionReceived() {
+        return lastTransactionReceived.get();
+    }
+
+    @Override
+    public int getLastTransactionSent() {
+        return lastTransactionSent.get();
+    }
+
+    @Override
+    public void addRealTimeTask(int transaction, Runnable runnable) {
+        latencyUtils.addRealTimeTask(transaction, runnable);
     }
 
     @Override
@@ -676,6 +750,16 @@ public class GrimPlayer implements GrimUser {
     @Override
     public String getBrand() {
         return checkManager.getPacketCheck(ClientBrand.class).getBrand();
+    }
+
+    @Override
+    public @Nullable String getWorldName() {
+        return bukkitPlayer != null ? bukkitPlayer.getWorld().getName() : null;
+    }
+
+    @Override
+    public @Nullable UUID getWorldUID() {
+        return bukkitPlayer != null ? bukkitPlayer.getWorld().getUID() : null;
     }
 
     @Override
@@ -703,10 +787,164 @@ public class GrimPlayer implements GrimUser {
         return checkManager.allChecks.values();
     }
 
-
     public void runNettyTaskInMs(Runnable runnable, int ms) {
         Channel channel = (Channel) user.getChannel();
         channel.eventLoop().schedule(runnable, ms, TimeUnit.MILLISECONDS);
+    }
+
+    private int maxTransactionTime = 60;
+    @Getter private boolean ignoreDuplicatePacketRotation = false;
+    @Getter @Setter private boolean experimentalChecks = false;
+    @Getter private boolean cancelDuplicatePacket = true;
+    @Getter @Setter private boolean exemptElytra = false;
+
+    @Override
+    public void reload(ConfigManager config) {
+        featureManager.onReload(config);
+        spamThreshold = config.getIntElse("packet-spam-threshold", 100);
+        maxTransactionTime = GrimMath.clamp(config.getIntElse("max-transaction-time", 60), 1, 180);
+        ignoreDuplicatePacketRotation = config.getBooleanElse("ignore-duplicate-packet-rotation", false);
+        cancelDuplicatePacket = config.getBooleanElse("cancel-duplicate-packet", true);
+        // reload all checks
+        for (AbstractCheck value : checkManager.allChecks.values()) value.reload();
+        // reload punishment manager
+        punishmentManager.reload(config);
+    }
+
+    @Override
+    public void reload() {
+        reload(GrimAPI.INSTANCE.getConfigManager().getConfig());
+    }
+
+    public void resetBukkitItemUsage() {
+        if (resetActiveBukkitItem != null && this.isUsingBukkitItem()) {
+            this.bukkitPlayer.updateInventory();
+            resetActiveBukkitItem.accept(this.bukkitPlayer);
+        }
+    }
+
+    public boolean isUsingBukkitItem() {
+        return isUsingBukkitItem != null && this.bukkitPlayer != null && isUsingBukkitItem.test(this.bukkitPlayer);
+    }
+
+    static {
+        ServerVersion version = PacketEvents.getAPI().getServerManager().getVersion();
+        Predicate<Player> isUsingBukkitItem0 = null;
+        Consumer<Player> resetActiveBukkitItem0 = null;
+
+        try {
+            if (version == ServerVersion.V_1_8_8) {
+                Class<?> EntityHuman = Class.forName("net.minecraft.server.v1_8_R3.EntityHuman");
+                Method getHandle = Class.forName("org.bukkit.craftbukkit.v1_8_R3.entity.CraftPlayer").getMethod("getHandle");
+                Method clearActiveItem = EntityHuman.getMethod("bV");
+                Method isUsingItem = EntityHuman.getMethod("bS");
+
+                resetActiveBukkitItem0 = player -> {
+                    try {
+                        clearActiveItem.invoke(getHandle.invoke(player));
+                    } catch (IllegalAccessException | InvocationTargetException e) {
+                        throw new RuntimeException(e);
+                    }
+                };
+
+                isUsingBukkitItem0 = player -> {
+                    try {
+                        return (boolean) isUsingItem.invoke(getHandle.invoke(player));
+                    } catch (IllegalAccessException | InvocationTargetException e) {
+                        throw new RuntimeException(e);
+                    }
+                };
+            } else if (version == ServerVersion.V_1_12_2) {
+                Class<?> EntityLiving = Class.forName("net.minecraft.server.v1_12_R1.EntityLiving");
+                Method getHandle = Class.forName("org.bukkit.craftbukkit.v1_12_R1.entity.CraftPlayer").getMethod("getHandle");
+                Method clearActiveItem = EntityLiving.getMethod("cN");
+                Method getItemInUse = EntityLiving.getMethod("cJ");
+                Method isEmpty = Class.forName("net.minecraft.server.v1_12_R1.ItemStack").getMethod("isEmpty");
+
+                resetActiveBukkitItem0 = player -> {
+                    try {
+                        clearActiveItem.invoke(getHandle.invoke(player));
+                    } catch (IllegalAccessException | InvocationTargetException e) {
+                        throw new RuntimeException(e);
+                    }
+                };
+
+                isUsingBukkitItem0 = player -> {
+                    try {
+                        var item = getItemInUse.invoke(getHandle.invoke(player));
+                        return item != null && !((boolean) isEmpty.invoke(item));
+                    } catch (IllegalAccessException | InvocationTargetException e) {
+                        throw new RuntimeException(e);
+                    }
+                };
+            } else if (version == ServerVersion.V_1_16_5) {
+                Class<?> EntityLiving = Class.forName("net.minecraft.server.v1_16_R3.EntityLiving");
+                Method getHandle = Class.forName("org.bukkit.craftbukkit.v1_16_R3.entity.CraftPlayer").getMethod("getHandle");
+                Method clearActiveItem = EntityLiving.getMethod("clearActiveItem");
+                Method getItemInUse = EntityLiving.getMethod("getActiveItem");
+                Method isEmpty = Class.forName("net.minecraft.server.v1_16_R3.ItemStack").getMethod("isEmpty");
+
+                resetActiveBukkitItem0 = player -> {
+                    try {
+                        clearActiveItem.invoke(getHandle.invoke(player));
+                    } catch (IllegalAccessException | InvocationTargetException e) {
+                        throw new RuntimeException(e);
+                    }
+                };
+
+                isUsingBukkitItem0 = player -> {
+                    try {
+                        Object item = getItemInUse.invoke(getHandle.invoke(player));
+                        return item != null && !((boolean) isEmpty.invoke(item));
+                    } catch (IllegalAccessException | InvocationTargetException e) {
+                        throw new RuntimeException(e);
+                    }
+                };
+            } else if (version.isNewerThanOrEquals(ServerVersion.V_1_17_1)) {
+                isUsingBukkitItem0 = player -> player.getItemInUse() != null;
+                try { // paper only
+                    LivingEntity.class.getMethod("clearActiveItem");
+                    resetActiveBukkitItem0 = LivingEntity::clearActiveItem;
+                } catch (NoSuchMethodException ignored) {}
+            }
+        } catch (ClassNotFoundException | NoSuchMethodException e) {
+            throw new RuntimeException(e);
+        } finally {
+            resetActiveBukkitItem = resetActiveBukkitItem0;
+            isUsingBukkitItem = isUsingBukkitItem0;
+
+            if (resetActiveBukkitItem == null) {
+                LogUtil.warn("could not find method to reset item usage (are you using spigot?)");
+            }
+
+            if (isUsingBukkitItem == null) {
+                LogUtil.warn("could not find method to get item usage status (are you using an unsupported version?)");
+            }
+        }
+    }
+
+    private final FeatureManagerImpl featureManager = new FeatureManagerImpl(this);
+
+    @Override
+    public FeatureManager getFeatureManager() {
+        return featureManager;
+    }
+
+    @Override
+    public void sendMessage(String message) {
+        if (bukkitPlayer != null) bukkitPlayer.sendMessage(message);
+    }
+
+    private ResyncHandler resyncHandler = new BukkitResyncHandler(this);
+
+    @Override
+    public ResyncHandler getResyncHandler() {
+        return resyncHandler;
+    }
+
+    @Override
+    public void setResyncHandler(ResyncHandler resyncHandler) {
+        this.resyncHandler = resyncHandler;
     }
 
 }

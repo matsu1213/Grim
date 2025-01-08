@@ -6,6 +6,7 @@ import ac.grim.grimac.utils.data.packetentity.PacketEntity;
 import ac.grim.grimac.utils.data.packetentity.PacketEntityHorse;
 import ac.grim.grimac.utils.data.packetentity.PacketEntitySizeable;
 import ac.grim.grimac.utils.data.packetentity.PacketEntityTrackXRot;
+import ac.grim.grimac.utils.math.GrimMath;
 import com.github.retrooper.packetevents.protocol.entity.type.EntityType;
 import com.github.retrooper.packetevents.protocol.entity.type.EntityTypes;
 import com.github.retrooper.packetevents.protocol.player.ClientVersion;
@@ -28,11 +29,13 @@ public final class BoundingBoxSize {
 
     private static float getWidthMinusBaby(GrimPlayer player, PacketEntity packetEntity) {
         final EntityType type = packetEntity.getType();
-        if (EntityTypes.AXOLOTL.equals(type) || EntityTypes.PANDA.equals(type)) {
+        if (EntityTypes.AXOLOTL.equals(type)) {
+            return 0.75f;
+        } else if (EntityTypes.PANDA.equals(type)) {
             return 1.3f;
         } else if (EntityTypes.BAT.equals(type) || EntityTypes.PARROT.equals(type) || EntityTypes.COD.equals(type) || EntityTypes.EVOKER_FANGS.equals(type) || EntityTypes.TROPICAL_FISH.equals(type) || EntityTypes.FROG.equals(type)) {
             return 0.5f;
-        } else if (EntityTypes.BEE.equals(type) || EntityTypes.PUFFERFISH.equals(type) || EntityTypes.SALMON.equals(type) || EntityTypes.SNOW_GOLEM.equals(type) || EntityTypes.CAVE_SPIDER.equals(type)) {
+        } else if (EntityTypes.ARMADILLO.equals(type) || EntityTypes.BEE.equals(type) || EntityTypes.PUFFERFISH.equals(type) || EntityTypes.SALMON.equals(type) || EntityTypes.SNOW_GOLEM.equals(type) || EntityTypes.CAVE_SPIDER.equals(type)) {
             return 0.7f;
         } else if (EntityTypes.WITHER_SKELETON.equals(type)) {
             return player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_9) ? 0.7f : 0.72f;
@@ -51,21 +54,21 @@ public final class BoundingBoxSize {
         } else if (EntityTypes.STRIDER.equals(type) || EntityTypes.COW.equals(type) || EntityTypes.SHEEP.equals(type) || EntityTypes.MOOSHROOM.equals(type) || EntityTypes.PIG.equals(type) || EntityTypes.LLAMA.equals(type) || EntityTypes.DOLPHIN.equals(type) || EntityTypes.WITHER.equals(type) || EntityTypes.TRADER_LLAMA.equals(type) || EntityTypes.WARDEN.equals(type) || EntityTypes.GOAT.equals(type)) {
             return 0.9f;
         } else if (EntityTypes.PHANTOM.equals(type)) {
-            if (packetEntity instanceof PacketEntitySizeable) {
-                return 0.9f + ((PacketEntitySizeable) packetEntity).size * 0.2f;
+            if (packetEntity instanceof PacketEntitySizeable sizeable) {
+                return 0.9f + sizeable.size * 0.2f;
             }
 
             return 1.5f;
         } else if (EntityTypes.ELDER_GUARDIAN.equals(type)) { // TODO: 2.35 * guardian?
             return 1.9975f;
         } else if (EntityTypes.END_CRYSTAL.equals(type)) {
-            return 2.0f;
+            return 2f;
         } else if (EntityTypes.ENDER_DRAGON.equals(type)) {
-            return 16.0f;
+            return 16f;
         } else if (EntityTypes.FIREBALL.equals(type)) {
             return 1f;
         } else if (EntityTypes.GHAST.equals(type)) {
-            return 4.0f;
+            return 4f;
         } else if (EntityTypes.GIANT.equals(type)) {
             return 3.6f;
         } else if (EntityTypes.GUARDIAN.equals(type)) {
@@ -73,8 +76,8 @@ public final class BoundingBoxSize {
         } else if (EntityTypes.IRON_GOLEM.equals(type)) {
             return 1.4f;
         } else if (EntityTypes.MAGMA_CUBE.equals(type)) {
-            if (packetEntity instanceof PacketEntitySizeable) {
-                float size = ((PacketEntitySizeable) packetEntity).size;
+            if (packetEntity instanceof PacketEntitySizeable sizeable) {
+                float size = sizeable.size;
                 return player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_20_5)
                         ? 0.52f * size : player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_9)
                         ? 2.04f * (0.255f * size)
@@ -91,10 +94,10 @@ public final class BoundingBoxSize {
         } else if (EntityTypes.RAVAGER.equals(type)) {
             return 1.95f;
         } else if (EntityTypes.SHULKER.equals(type)) {
-            return 1.0f;
+            return 1f;
         } else if (EntityTypes.SLIME.equals(type)) {
-            if (packetEntity instanceof PacketEntitySizeable) {
-                float size = ((PacketEntitySizeable) packetEntity).size;
+            if (packetEntity instanceof PacketEntitySizeable sizeable) {
+                float size = sizeable.size;
                 return player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_20_5)
                         ? 0.52f * size : player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_9)
                         ? 2.04f * (0.255f * size) : 0.51000005f * size;
@@ -116,64 +119,63 @@ public final class BoundingBoxSize {
         } else if (EntityTypes.CAMEL.equals(type)) {
             return 1.7f;
         } else if (EntityTypes.WIND_CHARGE.equals(type)) {
-            return 0.3125F;
+            return 0.3125f;
         }
         return 0.6f;
     }
 
     public static Vector3d getRidingOffsetFromVehicle(PacketEntity entity, GrimPlayer player) {
         SimpleCollisionBox box = entity.getPossibleCollisionBoxes();
-        double x = (box.maxX + box.minX) / 2.0;
+        double x = (box.maxX + box.minX) / 2d;
         double y = box.minY;
-        double z = (box.maxZ + box.minZ) / 2.0;
+        double z = (box.maxZ + box.minZ) / 2d;
 
-        if (entity instanceof PacketEntityTrackXRot) {
-            PacketEntityTrackXRot xRotEntity = (PacketEntityTrackXRot) entity;
-
+        if (entity instanceof PacketEntityTrackXRot xRotEntity) {
             // Horses desync here, and we can't do anything about it without interpolating animations.
             // Mojang just has to fix it.  I'm not attempting to fix it.
             // Striders also do the same with animations, causing a desync.
             // At least the only people using buckets are people in boats for villager transportation
             // and people trying to false the anticheat.
             if (EntityTypes.isTypeInstanceOf(entity.getType(), EntityTypes.BOAT)) {
-                float f = 0.0F;
+                float f = 0f;
                 float f1 = (float) (getPassengerRidingOffset(player, entity) - 0.35f); // hardcoded player offset
 
                 if (!entity.passengers.isEmpty()) {
                     int i = entity.passengers.indexOf(player.compensatedEntities.getSelf());
 
                     if (i == 0) {
-                        f = 0.2F;
+                        f = 0.2f;
                     } else if (i == 1) {
-                        f = -0.6F;
+                        f = -0.6f;
                     }
                 }
 
-                Vector3d vec3 = (new Vector3d(f, 0.0D, 0.0D));
-                vec3 = yRot(-xRotEntity.interpYaw * ((float) Math.PI / 180F) - ((float) Math.PI / 2F), vec3);
+                Vector3d vec3 = new Vector3d(f, 0d, 0d);
+                vec3 = yRot(GrimMath.radians(-xRotEntity.interpYaw) - ((float) Math.PI / 2f), vec3);
                 return new Vector3d(x + vec3.x, y + (double) f1, z + vec3.z);
             } else if (entity.getType() == EntityTypes.LLAMA) {
-                float f = player.trigHandler.cos(xRotEntity.interpYaw * ((float) Math.PI / 180F));
-                float f1 = player.trigHandler.sin(xRotEntity.interpYaw * ((float) Math.PI / 180F));
-                return new Vector3d(x + (double) (0.3F * f1), y + getPassengerRidingOffset(player, entity) - 0.35f, z + (double) (0.3F * f));
+                float f = player.trigHandler.cos(GrimMath.radians(xRotEntity.interpYaw));
+                float f1 = player.trigHandler.sin(GrimMath.radians(xRotEntity.interpYaw));
+                return new Vector3d(x + (double) (0.3f * f1), y + getPassengerRidingOffset(player, entity) - 0.35f, z + (double) (0.3f * f));
             } else if (entity.getType() == EntityTypes.CHICKEN) {
-                float f = player.trigHandler.sin(xRotEntity.interpYaw * ((float) Math.PI / 180F));
-                float f1 = player.trigHandler.cos(xRotEntity.interpYaw * ((float) Math.PI / 180F));
+                float f = player.trigHandler.sin(GrimMath.radians(xRotEntity.interpYaw));
+                float f1 = player.trigHandler.cos(GrimMath.radians(xRotEntity.interpYaw));
                 y = y + (getHeight(player, entity) * 0.5f);
-                return new Vector3d(x + (double) (0.1F * f), y - 0.35f, z - (double) (0.1F * f1));
+                return new Vector3d(x + (double) (0.1f * f), y - 0.35f, z - (double) (0.1f * f1));
             }
         }
 
         return new Vector3d(x, y + getPassengerRidingOffset(player, entity) - 0.35f, z);
     }
 
-    private static Vector3d yRot(float p_82525_, Vector3d start) {
-        float f = (float) Math.cos(p_82525_);
-        float f1 = (float) Math.sin(p_82525_);
-        double d0 = start.getX() * (double) f + start.getZ() * (double) f1;
-        double d1 = start.getY();
-        double d2 = start.getZ() * (double) f - start.getX() * (double) f1;
-        return new Vector3d(d0, d1, d2);
+    private static Vector3d yRot(float yaw, Vector3d start) {
+        double cos = (float) Math.cos(yaw);
+        double sin = (float) Math.sin(yaw);
+        return new Vector3d(
+                start.x * cos + start.z * sin,
+                start.y,
+                start.z * cos - start.x * sin
+        );
     }
 
     public static float getHeight(GrimPlayer player, PacketEntity packetEntity) {
@@ -231,7 +233,11 @@ public final class BoundingBoxSize {
     }
     private static float getHeightMinusBaby(GrimPlayer player, PacketEntity packetEntity) {
         final EntityType type = packetEntity.getType();
-        if (EntityTypes.AXOLOTL.equals(type) || EntityTypes.BEE.equals(type) || EntityTypes.DOLPHIN.equals(type) || EntityTypes.ALLAY.equals(type)) {
+        if (EntityTypes.ARMADILLO.equals(type)) {
+            return 0.65f;
+        } else if (EntityTypes.AXOLOTL.equals(type)) {
+            return 0.42f;
+        } else if (EntityTypes.BEE.equals(type) || EntityTypes.DOLPHIN.equals(type) || EntityTypes.ALLAY.equals(type)) {
             return 0.6f;
         } else if (EntityTypes.EVOKER_FANGS.equals(type) || EntityTypes.VEX.equals(type)) {
             return 0.8f;
@@ -272,17 +278,17 @@ public final class BoundingBoxSize {
         } else if (EntityTypes.ENDERMITE.equals(type) || EntityTypes.COD.equals(type)) {
             return 0.3f;
         } else if (EntityTypes.END_CRYSTAL.equals(type)) {
-            return 2.0f;
+            return 2f;
         } else if (EntityTypes.ENDER_DRAGON.equals(type)) {
-            return 8.0f;
+            return 8f;
         } else if (EntityTypes.FIREBALL.equals(type)) {
             return 1f;
         } else if (EntityTypes.FOX.equals(type)) {
             return 0.7f;
         } else if (EntityTypes.GHAST.equals(type)) {
-            return 4.0f;
+            return 4f;
         } else if (EntityTypes.GIANT.equals(type)) {
-            return 12.0f;
+            return 12f;
         } else if (EntityTypes.GUARDIAN.equals(type)) {
             return 0.85f;
         } else if (EntityTypes.HORSE.equals(type)) {
@@ -294,8 +300,8 @@ public final class BoundingBoxSize {
         } else if (EntityTypes.TROPICAL_FISH.equals(type)) {
             return 0.4f;
         } else if (EntityTypes.MAGMA_CUBE.equals(type)) {
-            if (packetEntity instanceof PacketEntitySizeable) {
-                float size = ((PacketEntitySizeable) packetEntity).size;
+            if (packetEntity instanceof PacketEntitySizeable sizeable) {
+                float size = sizeable.size;
                 return player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_20_5)
                         ? 0.52f * size : player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_9)
                         ? 2.04f * (0.255f * size)
@@ -314,8 +320,8 @@ public final class BoundingBoxSize {
         } else if (EntityTypes.PANDA.equals(type)) {
             return 1.25f;
         } else if (EntityTypes.PHANTOM.equals(type)) {
-            if (packetEntity instanceof PacketEntitySizeable) {
-                return 0.5f + ((PacketEntitySizeable) packetEntity).size * 0.1f;
+            if (packetEntity instanceof PacketEntitySizeable sizeable) {
+                return 0.5f + sizeable.size * 0.1f;
             }
 
             return 1.8f;
@@ -334,7 +340,7 @@ public final class BoundingBoxSize {
         } else if (EntityTypes.SHEEP.equals(type) || EntityTypes.GOAT.equals(type)) {
             return 1.3f;
         } else if (EntityTypes.SHULKER.equals(type)) { // Could maybe guess peek size, although seems useless
-            return 2.0f;
+            return 2f;
         } else if (EntityTypes.SILVERFISH.equals(type)) {
             return 0.3f;
         } else if (EntityTypes.SKELETON.equals(type)) {
@@ -342,8 +348,8 @@ public final class BoundingBoxSize {
         } else if (EntityTypes.SKELETON_HORSE.equals(type)) {
             return 1.6f;
         } else if (EntityTypes.SLIME.equals(type)) {
-            if (packetEntity instanceof PacketEntitySizeable) {
-                float size = ((PacketEntitySizeable) packetEntity).size;
+            if (packetEntity instanceof PacketEntitySizeable sizeable) {
+                float size = sizeable.size;
                 return player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_20_5)
                         ? 0.52f * size : player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_9)
                         ? 2.04f * (0.255f * size)
@@ -374,11 +380,11 @@ public final class BoundingBoxSize {
         } else if (EntityTypes.CAMEL.equals(type)) {
             return 2.375f;
         } else if (EntityTypes.BREEZE.equals(type)) {
-            return 1.77F;
+            return 1.77f;
         } else if (EntityTypes.BOGGED.equals(type)) {
-            return 1.99F;
+            return 1.99f;
         } else if (EntityTypes.WIND_CHARGE.equals(type)) {
-            return 0.3125F;
+            return 0.3125f;
         }
         return 1.95f;
     }

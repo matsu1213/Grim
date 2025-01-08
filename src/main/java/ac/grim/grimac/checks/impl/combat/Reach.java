@@ -15,6 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 package ac.grim.grimac.checks.impl.combat;
 
+import ac.grim.grimac.api.config.ConfigManager;
 import ac.grim.grimac.checks.Check;
 import ac.grim.grimac.checks.CheckData;
 import ac.grim.grimac.checks.type.PacketCheck;
@@ -24,6 +25,7 @@ import ac.grim.grimac.utils.data.packetentity.PacketEntity;
 import ac.grim.grimac.utils.data.packetentity.dragon.PacketEntityEnderDragonPart;
 import ac.grim.grimac.utils.nmsutil.ReachUtils;
 import com.github.retrooper.packetevents.event.PacketReceiveEvent;
+import com.github.retrooper.packetevents.protocol.attribute.Attributes;
 import com.github.retrooper.packetevents.protocol.entity.type.EntityType;
 import com.github.retrooper.packetevents.protocol.entity.type.EntityTypes;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
@@ -31,17 +33,20 @@ import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.protocol.player.GameMode;
 import com.github.retrooper.packetevents.util.Vector3d;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientInteractEntity;
-import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerFlying;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import org.bukkit.util.Vector;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
 
 // You may not copy the check unless you are licensed under GPL
-@CheckData(name = "Reach", configName = "Reach", setback = 10)
+@CheckData(name = "Reach", setback = 10)
 public class Reach extends Check implements PacketCheck {
+
     // Only one flag per reach attack, per entity, per tick.
     // We store position because lastX isn't reliable on teleports.
-    private final Map<Integer, Vector3d> playerAttackQueue = new HashMap<>();
+    private final Int2ObjectMap<Vector3d> playerAttackQueue = new Int2ObjectOpenHashMap<>();
     private static final List<EntityType> blacklisted = Arrays.asList(
             EntityTypes.BOAT,
             EntityTypes.CHEST_BOAT,
@@ -79,7 +84,7 @@ public class Reach extends Check implements PacketCheck {
                 }
                 return;
             }
-            
+
             // Dead entities cause false flags (https://github.com/GrimAnticheat/Grim/issues/546)
             if (entity.isDead) return;
 
@@ -104,9 +109,7 @@ public class Reach extends Check implements PacketCheck {
         }
 
         // If the player set their look, or we know they have a new tick
-        if (WrapperPlayClientPlayerFlying.isFlying(event.getPacketType()) ||
-                event.getPacketType() == PacketType.Play.Client.PONG ||
-                event.getPacketType() == PacketType.Play.Client.WINDOW_CONFIRMATION) {
+        if (isUpdate(event.getPacketType())) {
             tickBetterReachCheckWithAngle();
         }
     }
@@ -129,34 +132,40 @@ public class Reach extends Check implements PacketCheck {
 
         // Filter out what we assume to be cheats
         if (cancelBuffer != 0) {
-            return checkReach(reachEntity, new Vector3d(player.x, player.y, player.z), true) != null; // If they flagged
+            CheckResult result = checkReach(reachEntity, new Vector3d(player.x, player.y, player.z), true);
+            return result.isFlag(); // If they flagged
         } else {
             SimpleCollisionBox targetBox = reachEntity.getPossibleCollisionBoxes();
             if (reachEntity.getType() == EntityTypes.END_CRYSTAL) {
                 targetBox = new SimpleCollisionBox(reachEntity.trackedServerPosition.getPos().subtract(1, 0, 1), reachEntity.trackedServerPosition.getPos().add(1, 2, 1));
             }
-            return ReachUtils.getMinReachToBox(player, targetBox) > player.compensatedEntities.getSelf().getEntityInteractRange();
+            return ReachUtils.getMinReachToBox(player, targetBox) > player.compensatedEntities.getSelf().getAttributeValue(Attributes.ENTITY_INTERACTION_RANGE);
         }
     }
 
     private void tickBetterReachCheckWithAngle() {
-        for (Map.Entry<Integer, Vector3d> attack : playerAttackQueue.entrySet()) {
-            PacketEntity reachEntity = player.compensatedEntities.entityMap.get(attack.getKey().intValue());
-            if (reachEntity != null) {
-                String result = checkReach(reachEntity, attack.getValue(), false);
-                if (result != null) {
-                    if (reachEntity.getType() == EntityTypes.PLAYER) {
-                        flagAndAlert(result);
-                    } else {
-                        flagAndAlert(result + " type=" + reachEntity.getType().getName().getKey());
-                    }
+        for (Int2ObjectMap.Entry<Vector3d> attack : playerAttackQueue.int2ObjectEntrySet()) {
+            PacketEntity reachEntity = player.compensatedEntities.entityMap.get(attack.getIntKey());
+            if (reachEntity == null) continue;
+
+            CheckResult result = checkReach(reachEntity, attack.getValue(), false);
+            switch (result.type()) {
+                case REACH -> {
+                    String added = reachEntity.getType() == EntityTypes.PLAYER ? "" : ", type=" + reachEntity.getType().getName().getKey();
+                    flagAndAlert(result.verbose() + added);
+                }
+                case HITBOX -> {
+                    String added = reachEntity.getType() == EntityTypes.PLAYER ? "" : "type=" + reachEntity.getType().getName().getKey();
+                    player.checkManager.getPacketCheck(Hitboxes.class).flagAndAlert(result.verbose() + added);
                 }
             }
         }
+
         playerAttackQueue.clear();
     }
 
-    private String checkReach(PacketEntity reachEntity, Vector3d from, boolean isPrediction) {
+    @NotNull
+    private CheckResult checkReach(PacketEntity reachEntity, Vector3d from, boolean isPrediction) {
         SimpleCollisionBox targetBox = reachEntity.getPossibleCollisionBoxes();
 
         if (reachEntity.getType() == EntityTypes.END_CRYSTAL) { // Hardcode end crystal box
@@ -175,7 +184,9 @@ public class Reach extends Check implements PacketCheck {
         // Adds some more than 0.03 uncertainty in some cases, but a good trade off for simplicity
         //
         // Just give the uncertainty on 1.9+ clients as we have no way of knowing whether they had 0.03 movement
-        if (!player.packetStateData.didLastLastMovementIncludePosition || player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_9))
+        // However, on 1.21.2+ we do know if they had 0.03 movement
+        if (!player.packetStateData.didLastLastMovementIncludePosition
+                || (!player.supportsEndTick() && player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_9)))
             targetBox.expand(player.getMovementThreshold());
 
         double minDistance = Double.MAX_VALUE;
@@ -198,14 +209,17 @@ public class Reach extends Check implements PacketCheck {
             }
         }
 
+        final double maxReach = player.compensatedEntities.getSelf().getAttributeValue(Attributes.ENTITY_INTERACTION_RANGE);
         // +3 would be 3 + 3 = 6, which is the pre-1.20.5 behaviour, preventing "Missed Hitbox"
-        final double distance = player.compensatedEntities.getSelf().getEntityInteractRange() + 3;
+        final double distance = maxReach + 3;
+        final double[] possibleEyeHeights = player.getPossibleEyeHeights();
+        final Vector eyePos = new Vector(from.getX(), 0, from.getZ());
         for (Vector lookVec : possibleLookDirs) {
-            for (double eye : player.getPossibleEyeHeights()) {
-                Vector eyePos = new Vector(from.getX(), from.getY() + eye, from.getZ());
+            for (double eye : possibleEyeHeights) {
+                eyePos.setY(from.getY() + eye);
                 Vector endReachPos = eyePos.clone().add(new Vector(lookVec.getX() * distance, lookVec.getY() * distance, lookVec.getZ() * distance));
 
-                Vector intercept = ReachUtils.calculateIntercept(targetBox, eyePos, endReachPos).getFirst();
+                Vector intercept = ReachUtils.calculateIntercept(targetBox, eyePos, endReachPos).first();
 
                 if (ReachUtils.isVecInside(targetBox, eyePos)) {
                     minDistance = 0;
@@ -222,22 +236,33 @@ public class Reach extends Check implements PacketCheck {
         if ((!blacklisted.contains(reachEntity.getType()) && reachEntity.isLivingEntity()) || reachEntity.getType() == EntityTypes.END_CRYSTAL) {
             if (minDistance == Double.MAX_VALUE) {
                 cancelBuffer = 1;
-                return "Missed hitbox";
-            } else if (minDistance > player.compensatedEntities.getSelf().getEntityInteractRange()) {
+                return new CheckResult(ResultType.HITBOX, "");
+            } else if (minDistance > maxReach) {
                 cancelBuffer = 1;
-                return String.format("%.5f", minDistance) + " blocks";
+                return new CheckResult(ResultType.REACH, String.format("%.5f", minDistance) + " blocks");
             } else {
                 cancelBuffer = Math.max(0, cancelBuffer - 0.25);
             }
         }
 
-        return null;
+        return NONE;
+    }
+
+    private static final CheckResult NONE = new CheckResult(ResultType.NONE, "");
+
+    private record CheckResult(ResultType type, String verbose) {
+        public boolean isFlag() {
+            return type != ResultType.NONE;
+        }
+    }
+
+    private enum ResultType {
+        REACH, HITBOX, NONE
     }
 
     @Override
-    public void reload() {
-        super.reload();
-        this.cancelImpossibleHits = getConfig().getBooleanElse("Reach.block-impossible-hits", true);
-        this.threshold = getConfig().getDoubleElse("Reach.threshold", 0.0005);
+    public void onReload(ConfigManager config) {
+        this.cancelImpossibleHits = config.getBooleanElse("Reach.block-impossible-hits", true);
+        this.threshold = config.getDoubleElse("Reach.threshold", 0.0005);
     }
 }

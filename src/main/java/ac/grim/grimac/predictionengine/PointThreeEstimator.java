@@ -6,6 +6,7 @@ import ac.grim.grimac.utils.collisions.CollisionData;
 import ac.grim.grimac.utils.collisions.datatypes.CollisionBox;
 import ac.grim.grimac.utils.collisions.datatypes.SimpleCollisionBox;
 import ac.grim.grimac.utils.data.VectorData;
+import ac.grim.grimac.utils.data.tags.SyncedTags;
 import ac.grim.grimac.utils.nmsutil.*;
 import com.github.retrooper.packetevents.protocol.item.type.ItemTypes;
 import com.github.retrooper.packetevents.protocol.player.ClientVersion;
@@ -13,11 +14,13 @@ import com.github.retrooper.packetevents.protocol.potion.PotionType;
 import com.github.retrooper.packetevents.protocol.potion.PotionTypes;
 import com.github.retrooper.packetevents.protocol.world.states.WrappedBlockState;
 import com.github.retrooper.packetevents.protocol.world.states.defaulttags.BlockTags;
+import com.github.retrooper.packetevents.protocol.world.states.type.StateType;
 import com.github.retrooper.packetevents.protocol.world.states.type.StateTypes;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.util.Vector;
 
+import java.util.OptionalInt;
 import java.util.Set;
 
 /**
@@ -118,21 +121,23 @@ public class PointThreeEstimator {
 
     // Handle game events that occur between skipped ticks - thanks a lot mojang for removing the idle packet!
     public void handleChangeBlock(int x, int y, int z, WrappedBlockState state) {
-        CollisionBox data = CollisionData.getData(state.getType()).getMovementCollisionBox(player, player.getClientVersion(), state, x, y, z);
+        final StateType stateType = state.getType();
+        CollisionBox data = CollisionData.getData(stateType).getMovementCollisionBox(player, player.getClientVersion(), state, x, y, z);
         SimpleCollisionBox normalBox = GetBoundingBox.getBoundingBoxFromPosAndSize(player, player.x, player.y, player.z, 0.6f, 1.8f);
 
         // Calculate head hitters.  Take a shortcut by checking if the player doesn't intersect with this block, but does
         // when the player vertically moves upwards by 0.03!  This is equivalent to the move method, but MUCH faster.
-        SimpleCollisionBox slightlyExpanded = normalBox.copy().expand(0.03, 0, 0.03);
-        if (!slightlyExpanded.isIntersected(data) && slightlyExpanded.offset(0, 0.03, 0).isIntersected(data)) {
+        double movementThreshold = player.getMovementThreshold();
+        SimpleCollisionBox slightlyExpanded = normalBox.copy().expand(movementThreshold, 0, movementThreshold);
+        if (!slightlyExpanded.isIntersected(data) && slightlyExpanded.offset(0, movementThreshold, 0).isIntersected(data)) {
             headHitter = true;
         }
 
-        SimpleCollisionBox pointThreeBox = GetBoundingBox.getBoundingBoxFromPosAndSize(player, player.x, player.y - 0.03, player.z, 0.66f, 1.86f);
-        if ((Materials.isWater(player.getClientVersion(), state) || state.getType() == StateTypes.LAVA) &&
+        SimpleCollisionBox pointThreeBox = GetBoundingBox.getBoundingBoxFromPosAndSize(player, player.x, player.y - movementThreshold, player.z, 0.66f, 1.86f);
+        if ((Materials.isWater(player.getClientVersion(), state) || stateType == StateTypes.LAVA) &&
                 pointThreeBox.isIntersected(new SimpleCollisionBox(x, y, z))) {
 
-            if (state.getType() == StateTypes.BUBBLE_COLUMN) {
+            if (stateType == StateTypes.BUBBLE_COLUMN) {
                 isNearBubbleColumn = true;
             }
 
@@ -163,8 +168,8 @@ public class PointThreeEstimator {
             }
         }
 
-        if (!player.compensatedEntities.getSelf().inVehicle() && ((state.getType() == StateTypes.POWDER_SNOW && player.getInventory().getBoots().getType() == ItemTypes.LEATHER_BOOTS)
-                || Materials.isClimbable(state.getType())) && pointThreeBox.isIntersected(new SimpleCollisionBox(x, y, z))) {
+        if (!player.compensatedEntities.getSelf().inVehicle() && ((stateType == StateTypes.POWDER_SNOW && player.getInventory().getBoots().getType() == ItemTypes.LEATHER_BOOTS)
+                || player.tagManager.block(SyncedTags.CLIMBABLE).contains(stateType)) && pointThreeBox.isIntersected(new SimpleCollisionBox(x, y, z))) {
             isNearClimbable = true;
         }
     }
@@ -208,7 +213,8 @@ public class PointThreeEstimator {
     }
 
     public void endOfTickTick() {
-        SimpleCollisionBox pointThreeBox = GetBoundingBox.getBoundingBoxFromPosAndSize(player, player.x, player.y - 0.03, player.z, 0.66f, 1.86f);
+        double movementThreshold = player.getMovementThreshold();
+        SimpleCollisionBox pointThreeBox = GetBoundingBox.getBoundingBoxFromPosAndSize(player, player.x, player.y - movementThreshold, player.z, 0.66f, 1.86f);
 
         // Determine the head hitter using the current Y position
         SimpleCollisionBox oldBB = player.boundingBox;
@@ -218,7 +224,7 @@ public class PointThreeEstimator {
         for (float sizes : (player.skippedTickInActualMovement ? new float[]{0.6f, 1.5f, 1.8f} : new float[]{player.pose.height})) {
             // Try to limit collisions to be as small as possible, for maximum performance
             player.boundingBox = GetBoundingBox.getBoundingBoxFromPosAndSize(player, player.x, player.y + (sizes - 0.01f), player.z, 0.6f, 0.01f);
-            headHitter = headHitter || Collisions.collide(player, 0, 0.03, 0).getY() != 0.03;
+            headHitter = headHitter || Collisions.collide(player, 0, movementThreshold, 0).getY() != movementThreshold;
         }
 
         player.boundingBox = oldBB;
@@ -244,20 +250,21 @@ public class PointThreeEstimator {
 
         // Check for flowing water
         Collisions.hasMaterial(player, pointThreeBox, (pair) -> {
-            WrappedBlockState state = pair.getFirst();
-            if (Materials.isClimbable(state.getType()) || (state.getType() == StateTypes.POWDER_SNOW && !player.compensatedEntities.getSelf().inVehicle() && player.getInventory().getBoots().getType() == ItemTypes.LEATHER_BOOTS)) {
+            final WrappedBlockState state = pair.first();
+            final StateType stateType = state.getType();
+            if (player.tagManager.block(SyncedTags.CLIMBABLE).contains(stateType) || (stateType == StateTypes.POWDER_SNOW && !player.compensatedEntities.getSelf().inVehicle() && player.getInventory().getBoots().getType() == ItemTypes.LEATHER_BOOTS)) {
                 isNearClimbable = true;
             }
 
-            if (BlockTags.TRAPDOORS.contains(state.getType())) {
-                isNearClimbable = isNearClimbable || Collisions.trapdoorUsableAsLadder(player, pair.getSecond().getX(), pair.getSecond().getY(), pair.getSecond().getZ(), state);
+            if (BlockTags.TRAPDOORS.contains(stateType)) {
+                isNearClimbable = isNearClimbable || Collisions.trapdoorUsableAsLadder(player, pair.second().getX(), pair.second().getY(), pair.second().getZ(), state);
             }
 
-            if (state.getType() == StateTypes.BUBBLE_COLUMN) {
+            if (stateType == StateTypes.BUBBLE_COLUMN) {
                 isNearBubbleColumn = true;
             }
 
-            if (Materials.isWater(player.getClientVersion(), pair.getFirst()) || pair.getFirst().getType() == StateTypes.LAVA) {
+            if (Materials.isWater(player.getClientVersion(), pair.first()) || pair.first().getType() == StateTypes.LAVA) {
                 isNearFluid = true;
             }
 
@@ -307,7 +314,7 @@ public class PointThreeEstimator {
     public boolean determineCanSkipTick(float speed, Set<VectorData> init) {
         // If possible, check for idle packet
         // TODO: Find a better way to fix slime without forcing 0.03 where there is none
-        if (player.getClientVersion().isOlderThan(ClientVersion.V_1_9) && player.packetStateData.didLastMovementIncludePosition && !player.uncertaintyHandler.isSteppingOnSlime) {
+        if (!player.canSkipTicks() && player.packetStateData.didLastMovementIncludePosition && !player.uncertaintyHandler.isSteppingOnSlime) {
             return false; // Last packet included a position so not 0.03
         }
 
@@ -436,9 +443,10 @@ public class PointThreeEstimator {
     }
 
     private double iterateGravity(GrimPlayer player, double y) {
-        if (player.compensatedEntities.getLevitationAmplifier() != null) {
+        final OptionalInt levitation = player.compensatedEntities.getPotionLevelForPlayer(PotionTypes.LEVITATION);
+        if (levitation.isPresent()) {
             // This supports both positive and negative levitation
-            y += (0.05 * (player.compensatedEntities.getLevitationAmplifier() + 1) - y * 0.2);
+            y += (0.05 * (levitation.getAsInt() + 1) - y * 0.2);
         } else if (player.hasGravity) {
             // Simulate gravity
             y -= player.gravity;

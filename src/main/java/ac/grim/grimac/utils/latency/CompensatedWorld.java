@@ -2,6 +2,7 @@ package ac.grim.grimac.utils.latency;
 
 import ac.grim.grimac.GrimAPI;
 import ac.grim.grimac.player.GrimPlayer;
+import ac.grim.grimac.utils.change.BlockModification;
 import ac.grim.grimac.utils.chunks.Column;
 import ac.grim.grimac.utils.collisions.CollisionData;
 import ac.grim.grimac.utils.collisions.datatypes.SimpleCollisionBox;
@@ -19,12 +20,10 @@ import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.manager.server.ServerVersion;
 import com.github.retrooper.packetevents.netty.channel.ChannelHelper;
 import com.github.retrooper.packetevents.protocol.entity.type.EntityTypes;
-import com.github.retrooper.packetevents.protocol.nbt.NBTCompound;
 import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.protocol.player.DiggingAction;
 import com.github.retrooper.packetevents.protocol.player.User;
 import com.github.retrooper.packetevents.protocol.world.BlockFace;
-import com.github.retrooper.packetevents.protocol.world.Dimension;
 import com.github.retrooper.packetevents.protocol.world.chunk.BaseChunk;
 import com.github.retrooper.packetevents.protocol.world.chunk.impl.v1_16.Chunk_v1_9;
 import com.github.retrooper.packetevents.protocol.world.chunk.impl.v_1_18.Chunk_v1_18;
@@ -32,6 +31,7 @@ import com.github.retrooper.packetevents.protocol.world.chunk.palette.DataPalett
 import com.github.retrooper.packetevents.protocol.world.chunk.palette.ListPalette;
 import com.github.retrooper.packetevents.protocol.world.chunk.palette.PaletteType;
 import com.github.retrooper.packetevents.protocol.world.chunk.storage.LegacyFlexibleStorage;
+import com.github.retrooper.packetevents.protocol.world.dimension.DimensionType;
 import com.github.retrooper.packetevents.protocol.world.states.WrappedBlockState;
 import com.github.retrooper.packetevents.protocol.world.states.defaulttags.BlockTags;
 import com.github.retrooper.packetevents.protocol.world.states.enums.*;
@@ -44,6 +44,9 @@ import com.github.retrooper.packetevents.wrapper.PacketWrapper;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerBlockPlacement;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerDigging;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientUseItem;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import org.bukkit.Bukkit;
@@ -56,7 +59,7 @@ public class CompensatedWorld {
     public static final ClientVersion blockVersion = PacketEvents.getAPI().getServerManager().getVersion().toClientVersion();
     private static final WrappedBlockState airData = WrappedBlockState.getByGlobalId(blockVersion, 0);
     public final GrimPlayer player;
-    public final Map<Long, Column> chunks;
+    public final Long2ObjectMap<Column> chunks;
     // Packet locations for blocks
     public Set<PistonData> activePistons = new HashSet<>();
     public Set<ShulkerData> openShulkerBoxes = new HashSet<>();
@@ -71,7 +74,7 @@ public class CompensatedWorld {
     private final Long2ObjectOpenHashMap<BlockPrediction> originalServerBlocks = new Long2ObjectOpenHashMap<>();
     // Blocks the client changed while placing or breaking blocks
     private List<Vector3i> currentlyChangedBlocks = new LinkedList<>();
-    private final Map<Integer, List<Vector3i>> serverIsCurrentlyProcessingThesePredictions = new HashMap<>();
+    private final Int2ObjectMap<List<Vector3i>> serverIsCurrentlyProcessingThesePredictions = new Int2ObjectOpenHashMap<>();
     private final Object2ObjectLinkedOpenHashMap<Pair<Vector3i, DiggingAction>, Vector3d> unackedActions = new Object2ObjectLinkedOpenHashMap<>();
     private boolean isCurrentlyPredicting = false;
     public boolean isRaining = false;
@@ -90,7 +93,7 @@ public class CompensatedWorld {
     }
 
     public void handlePredictionConfirmation(int prediction) {
-        for (Iterator<Map.Entry<Integer, List<Vector3i>>> it = serverIsCurrentlyProcessingThesePredictions.entrySet().iterator(); it.hasNext(); ) {
+        for (Iterator<Int2ObjectMap.Entry<List<Vector3i>>> it = serverIsCurrentlyProcessingThesePredictions.int2ObjectEntrySet().iterator(); it.hasNext(); ) {
             Map.Entry<Integer, List<Vector3i>> iter = it.next();
             if (iter.getKey() <= prediction) {
                 applyBlockChanges(iter.getValue());
@@ -137,8 +140,16 @@ public class CompensatedWorld {
     private void handleAck(Vector3i vector3i, int originalBlockId, Vector3d playerPosition) {
         // If we need to change the world block state
         if (getWrappedBlockStateAt(vector3i).getGlobalId() != originalBlockId) {
+            player.blockHistory.add(
+                    new BlockModification(
+                            player.compensatedWorld.getWrappedBlockStateAt(vector3i),
+                            WrappedBlockState.getByGlobalId(originalBlockId),
+                            vector3i,
+                            GrimAPI.INSTANCE.getTickManager().currentTick,
+                            BlockModification.Cause.HANDLE_NETTY_SYNC_TRANSACTION
+                    )
+            );
             updateBlock(vector3i.getX(), vector3i.getY(), vector3i.getZ(), originalBlockId);
-
             WrappedBlockState state = WrappedBlockState.getByGlobalId(blockVersion, originalBlockId);
 
             // The player will teleport themselves if they get stuck in the reverted block
@@ -267,13 +278,13 @@ public class CompensatedWorld {
         int offsetY = y - minHeight;
 
         if (column != null) {
-            if (column.getChunks().length <= (offsetY >> 4) || (offsetY >> 4) < 0) return;
+            if (column.chunks().length <= (offsetY >> 4) || (offsetY >> 4) < 0) return;
 
-            BaseChunk chunk = column.getChunks()[offsetY >> 4];
+            BaseChunk chunk = column.chunks()[offsetY >> 4];
 
             if (chunk == null) {
                 chunk = create();
-                column.getChunks()[offsetY >> 4] = chunk;
+                column.chunks()[offsetY >> 4] = chunk;
 
                 // Sets entire chunk to air
                 // This glitch/feature occurs due to the palette size being 0 when we first create a chunk section
@@ -430,9 +441,9 @@ public class CompensatedWorld {
             Column column = getChunk(x >> 4, z >> 4);
 
             y -= minHeight;
-            if (column == null || y < 0 || (y >> 4) >= column.getChunks().length) return airData;
+            if (column == null || y < 0 || (y >> 4) >= column.chunks().length) return airData;
 
-            BaseChunk chunk = column.getChunks()[y >> 4];
+            BaseChunk chunk = column.chunks()[y >> 4];
             if (chunk != null) {
                 return chunk.get(blockVersion, x & 0xF, y & 0xF, z & 0xF);
             }
@@ -497,13 +508,13 @@ public class CompensatedWorld {
 
             return isPowered ? state.getPower() : 0;
         } else if (state.getType() == StateTypes.REDSTONE_WALL_TORCH) {
-            return state.getFacing() != face && state.isPowered() ? 15 : 0;
+            return state.getFacing() != face && state.isLit() ? 15 : 0;
         } else if (state.getType() == StateTypes.DAYLIGHT_DETECTOR) {
             return state.getPower();
         } else if (state.getType() == StateTypes.OBSERVER) {
             return state.getFacing() == face && state.isPowered() ? 15 : 0;
         } else if (state.getType() == StateTypes.REPEATER) {
-            return state.getFacing() == face && state.isPowered() ? state.getPower() : 0;
+            return state.getFacing() == face && state.isPowered() ? 15 : 0;
         } else if (state.getType() == StateTypes.LECTERN) {
             return state.isPowered() ? 15 : 0;
         } else if (state.getType() == StateTypes.TARGET) {
@@ -531,7 +542,7 @@ public class CompensatedWorld {
         } else if (state.getType() == StateTypes.OBSERVER) {
             return state.getFacing() == face && state.isPowered() ? 15 : 0;
         } else if (state.getType() == StateTypes.REPEATER) {
-            return state.getFacing() == face && state.isPowered() ? state.getPower() : 0;
+            return state.getFacing() == face && state.isPowered() ? 15 : 0;
         } else if (state.getType() == StateTypes.REDSTONE_WIRE) {
             BlockFace needed = face.getOppositeFace();
 
@@ -608,7 +619,7 @@ public class CompensatedWorld {
     }
 
     public boolean containsLiquid(SimpleCollisionBox var0) {
-        return Collisions.hasMaterial(player, var0, data -> Materials.isWater(player.getClientVersion(), data.getFirst()) || data.getFirst().getType() == StateTypes.LAVA);
+        return Collisions.hasMaterial(player, var0, data -> Materials.isWater(player.getClientVersion(), data.first()) || data.first().getType() == StateTypes.LAVA);
     }
 
     public double getLavaFluidLevelAt(int x, int y, int z) {
@@ -630,7 +641,7 @@ public class CompensatedWorld {
     }
 
     public boolean containsLava(SimpleCollisionBox var0) {
-        return Collisions.hasMaterial(player, var0, data -> data.getFirst().getType() == StateTypes.LAVA);
+        return Collisions.hasMaterial(player, var0, data -> data.first().getType() == StateTypes.LAVA);
     }
 
     public double getWaterFluidLevelAt(double x, double y, double z) {
@@ -672,24 +683,12 @@ public class CompensatedWorld {
         return minHeight;
     }
 
-    public void setDimension(Dimension dimension, User user) {
+    public void setDimension(DimensionType dimension, User user) {
         // No world height NBT
         if (PacketEvents.getAPI().getServerManager().getVersion().isOlderThan(ServerVersion.V_1_17)) return;
 
-        final NBTCompound worldNBT = user.getWorldNBT(dimension);
-
-        final NBTCompound dimensionNBT = worldNBT.getCompoundTagOrNull("element");
-        // Mojang has decided to save another 1MB an hour by not sending data the client has "preinstalled"
-        // This code runs in 1.20.5+ with default world datapacks
-        if (dimensionNBT == null && user.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_20_5)) {
-            minHeight = user.getMinWorldHeight();
-            maxHeight = user.getMinWorldHeight() + user.getTotalWorldHeight();
-            return;
-        }
-
-        // Else get the heights directly from the NBT
-        minHeight = dimensionNBT.getNumberTagOrThrow("min_y").getAsInt();
-        maxHeight = minHeight + dimensionNBT.getNumberTagOrThrow("height").getAsInt();
+        minHeight = dimension.getMinY();
+        maxHeight = minHeight + dimension.getHeight();
     }
 
     public int getMaxHeight() {

@@ -1,5 +1,6 @@
 package ac.grim.grimac.checks.impl.prediction;
 
+import ac.grim.grimac.api.config.ConfigManager;
 import ac.grim.grimac.api.events.CompletePredictionEvent;
 import ac.grim.grimac.checks.Check;
 import ac.grim.grimac.checks.CheckData;
@@ -10,7 +11,7 @@ import org.bukkit.Bukkit;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
-@CheckData(name = "Simulation", configName = "Simulation", decay = 0.02)
+@CheckData(name = "Simulation", decay = 0.02)
 public class OffsetHandler extends Check implements PostPredictionCheck {
     // Config
     double setbackDecayMultiplier;
@@ -29,11 +30,11 @@ public class OffsetHandler extends Check implements PostPredictionCheck {
     }
 
     public void onPredictionComplete(final PredictionComplete predictionComplete) {
-        double offset = predictionComplete.getOffset();
-
         if (!predictionComplete.isChecked()) return;
 
-        CompletePredictionEvent completePredictionEvent = new CompletePredictionEvent(getPlayer(), this, predictionComplete.getOffset());
+        double offset = predictionComplete.getOffset();
+
+        CompletePredictionEvent completePredictionEvent = new CompletePredictionEvent(player, this, "", offset);
         Bukkit.getPluginManager().callEvent(completePredictionEvent);
 
         if (completePredictionEvent.isCancelled()) return;
@@ -66,7 +67,7 @@ public class OffsetHandler extends Check implements PostPredictionCheck {
                     humanFormattedOffset = humanFormattedOffset.replace("0.", ".");
                 }
 
-                if(alert(humanFormattedOffset + " /gl " + flagId)) {
+                if (alert(humanFormattedOffset + " /gl " + flagId)) {
                     flags.incrementAndGet(); // This debug was sent somewhere
                     predictionComplete.setIdentifier(flagId);
                 }
@@ -99,14 +100,12 @@ public class OffsetHandler extends Check implements PostPredictionCheck {
     }
 
     @Override
-    public void reload() {
-        super.reload();
-        setbackDecayMultiplier = getConfig().getDoubleElse("Simulation.setback-decay-multiplier", 0.999);
-        threshold = getConfig().getDoubleElse("Simulation.threshold", 0.001);
-        immediateSetbackThreshold = getConfig().getDoubleElse("Simulation.immediate-setback-threshold", 0.1);
-        maxAdvantage = getConfig().getDoubleElse("Simulation.max-advantage", 1);
-        maxCeiling = getConfig().getDoubleElse("Simulation.max-ceiling", 4);
-
+    public void onReload(ConfigManager config) {
+        setbackDecayMultiplier = config.getDoubleElse("Simulation.setback-decay-multiplier", 0.999);
+        threshold = config.getDoubleElse("Simulation.threshold", 0.001);
+        immediateSetbackThreshold = config.getDoubleElse("Simulation.immediate-setback-threshold", 0.1);
+        maxAdvantage = config.getDoubleElse("Simulation.max-advantage", 1);
+        maxCeiling = config.getDoubleElse("Simulation.max-ceiling", 4);
         if (maxAdvantage == -1) maxAdvantage = Double.MAX_VALUE;
         if (immediateSetbackThreshold == -1) immediateSetbackThreshold = Double.MAX_VALUE;
     }

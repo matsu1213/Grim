@@ -4,15 +4,15 @@ import ac.grim.grimac.player.GrimPlayer;
 import ac.grim.grimac.predictionengine.SneakingEstimator;
 import ac.grim.grimac.predictionengine.movementtick.MovementTickerPlayer;
 import ac.grim.grimac.utils.collisions.datatypes.SimpleCollisionBox;
+import ac.grim.grimac.utils.data.KnownInput;
 import ac.grim.grimac.utils.data.Pair;
 import ac.grim.grimac.utils.data.VectorData;
-import ac.grim.grimac.utils.math.GrimMath;
 import ac.grim.grimac.utils.math.VectorUtils;
 import ac.grim.grimac.utils.nmsutil.Collisions;
 import ac.grim.grimac.utils.nmsutil.GetBoundingBox;
 import ac.grim.grimac.utils.nmsutil.JumpPower;
 import ac.grim.grimac.utils.nmsutil.Riptide;
-import com.github.retrooper.packetevents.protocol.entity.type.EntityTypes;
+import com.github.retrooper.packetevents.protocol.attribute.Attributes;
 import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import org.bukkit.util.Vector;
 
@@ -38,7 +38,7 @@ public class PredictionEngine {
             bestPossibleZ = Math.min(Math.max(-1f, Math.round(theoreticalInput.getZ())), 1f);
         }
 
-        if (player.packetStateData.slowedByUsingItem) {
+        if (player.packetStateData.isSlowedByUsingItem()) {
             bestPossibleX *= 0.2F;
             bestPossibleZ *= 0.2F;
         }
@@ -112,7 +112,9 @@ public class PredictionEngine {
         SimpleCollisionBox originalBB = player.boundingBox;
         // 0.03 doesn't exist with vehicles, thank god
         // 1.13+ clients have stupid poses that desync because mojang brilliantly removed the idle packet in 1.9
-        SimpleCollisionBox pointThreeThanksMojang = player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_13) ? GetBoundingBox.getBoundingBoxFromPosAndSize(player, player.lastX, player.lastY, player.lastZ, 0.6f, 0.6f) : originalBB;
+        SimpleCollisionBox pointThreeThanksMojang = player.getClientVersion().isNewerThanOrEquals(ClientVersion.V_1_13)
+                ? GetBoundingBox.getBoundingBoxFromPosAndSize(player, player.lastX, player.lastY, player.lastZ, 0.6f, 0.6f)
+                : originalBB;
 
         player.skippedTickInActualMovement = false;
 
@@ -134,8 +136,8 @@ public class PredictionEngine {
 
             // Returns pair of primary push movement, and then outputvel
             Pair<Vector, Vector> output = doSeekingWallCollisions(player, primaryPushMovement, originalClientVel, clientVelAfterInput);
-            primaryPushMovement = output.getFirst();
-            Vector outputVel = clampMovementToHardBorder(player, output.getSecond());
+            primaryPushMovement = output.first();
+            Vector outputVel = clampMovementToHardBorder(player, output.second());
 
             double resultAccuracy = outputVel.distanceSquared(player.actualMovement);
 
@@ -170,7 +172,7 @@ public class PredictionEngine {
             // Whatever, if someone uses phase or something they will get caught by everything else...
             // Unlike knockback/explosions, there is no reason to force collisions to run to check it.
             // As not flipping item is preferred... it gets ran before any other options
-            if (player.packetStateData.slowedByUsingItem && !clientVelAfterInput.isFlipItem()) {
+            if (player.packetStateData.isSlowedByUsingItem() && !clientVelAfterInput.isFlipItem()) {
                 player.checkManager.getNoSlow().handlePredictionAnalysis(Math.sqrt(player.uncertaintyHandler.reduceOffset(resultAccuracy)));
             }
 
@@ -517,6 +519,7 @@ public class PredictionEngine {
         //
         // Be somewhat careful as there is an antikb (for horizontal) that relies on this lenience
         Vector uncertainty = new Vector(avgColliding * 0.08, additionVertical, avgColliding * 0.08);
+
         Vector min = new Vector(player.uncertaintyHandler.xNegativeUncertainty - additionHorizontal, -bonusY + player.uncertaintyHandler.yNegativeUncertainty, player.uncertaintyHandler.zNegativeUncertainty - additionHorizontal);
         Vector max = new Vector(player.uncertaintyHandler.xPositiveUncertainty + additionHorizontal, bonusY + player.uncertaintyHandler.yPositiveUncertainty, player.uncertaintyHandler.zPositiveUncertainty + additionHorizontal);
 
@@ -548,7 +551,7 @@ public class PredictionEngine {
         // We can't simulate the player's Y velocity, unknown number of ticks with a gravity change
         // Feel free to simulate all 104857600000000000000000000 possibilities!
         if (!player.pointThreeEstimator.canPredictNextVerticalMovement()) {
-            minVector.setY(minVector.getY() - player.compensatedEntities.getSelf().gravityAttribute);
+            minVector.setY(minVector.getY() - player.compensatedEntities.getSelf().getAttributeValue(Attributes.GRAVITY));
         }
 
         // Hidden slime block bounces by missing idle tick and 0.03
@@ -700,7 +703,36 @@ public class PredictionEngine {
         // Optimization - Also cuts down scenarios by 2/3
         // For some reason the player sprints while swimming no matter what
         // Probably as a way to tell the server it is swimming
-        int zMin = player.isSprinting && !player.isSwimming ? 1 : -1;
+        int forwardMin = player.isSprinting && !player.isSwimming ? 1 : -1;
+        int forwardMax = 1;
+        int strafeMin = -1;
+        int strafeMax = 1;
+
+        // Calculate inputs by the players known inputs on 1.21.2+
+        if (player.supportsEndTick()) {
+            forwardMin = forwardMax = strafeMin = strafeMax = 0;
+
+            final KnownInput knownInput = player.packetStateData.knownInput;
+            if (knownInput.forward()) {
+                forwardMax++;
+                forwardMin++;
+            }
+
+            if (knownInput.backward() && (!player.isSprinting || player.isSwimming)) {
+                forwardMax--;
+                forwardMin--;
+            }
+
+            if (knownInput.left()) {
+                strafeMax++;
+                strafeMin++;
+            }
+
+            if (knownInput.right()) {
+                strafeMax--;
+                strafeMin--;
+            }
+        }
 
         for (int loopSlowed = 0; loopSlowed <= 1; loopSlowed++) {
             // Loop twice for the using item status if the player is using a trident
@@ -712,9 +744,11 @@ public class PredictionEngine {
                 for (VectorData possibleLastTickOutput : possibleVectors) {
                     // Only do this when there is tick skipping
                     if (loopSlowed == 1 && !possibleLastTickOutput.isZeroPointZeroThree()) continue;
-                    for (int x = -1; x <= 1; x++) {
-                        for (int z = zMin; z <= 1; z++) {
-                            VectorData result = new VectorData(possibleLastTickOutput.vector.clone().add(getMovementResultFromInput(player, transformInputsToVector(player, new Vector(x, 0, z)), speed, player.xRot)), possibleLastTickOutput, VectorData.VectorType.InputResult);
+                    for (int strafe = strafeMin; strafe <= strafeMax; strafe++) {
+                        for (int forward = forwardMin; forward <= forwardMax; forward++) {
+                            VectorData result = new VectorData(possibleLastTickOutput.vector.clone()
+                                    .add(getMovementResultFromInput(player, transformInputsToVector(player, new Vector(strafe, 0, forward)), speed, player.xRot)),
+                                    possibleLastTickOutput, VectorData.VectorType.InputResult);
                             result = result.returnNewModified(result.vector.clone().multiply(player.stuckSpeedMultiplier), VectorData.VectorType.StuckMultiplier);
                             result = result.returnNewModified(handleOnClimbable(result.vector.clone(), player), VectorData.VectorType.Climbable);
                             // Signal that we need to flip sneaking bounding box
@@ -725,7 +759,7 @@ public class PredictionEngine {
                     }
                 }
 
-                player.packetStateData.slowedByUsingItem = !player.packetStateData.slowedByUsingItem;
+                player.packetStateData.setSlowedByUsingItem(!player.packetStateData.isSlowedByUsingItem());
             }
             // TODO: Secure this? Do we care about minor 1.9-1.18.1 (not 1.18.2+!) bypasses that no client exploits yet?
             // I personally don't care because 1.8 and 1.18.2 are much more popular than any weird version

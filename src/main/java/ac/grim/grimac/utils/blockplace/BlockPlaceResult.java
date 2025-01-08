@@ -24,7 +24,6 @@ import com.github.retrooper.packetevents.util.Vector3i;
 import org.bukkit.util.Vector;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 public enum BlockPlaceResult {
 
@@ -375,7 +374,7 @@ public enum BlockPlaceResult {
             place.set();
         }
     }, ItemTypes.values().stream().filter(mat -> mat.getName().getKey().contains("candle_cake"))
-            .collect(Collectors.toList()).toArray(new ItemType[0])),
+            .toList().toArray(new ItemType[0])),
 
     PISTON_BASE((player, place) -> {
         WrappedBlockState piston = place.getMaterial().createBlockState(CompensatedWorld.blockVersion);
@@ -423,18 +422,14 @@ public enum BlockPlaceResult {
         }
     }, ItemTypes.SUGAR_CANE),
 
-    // Moss carpet is a carpet not under the carpets tag
-    MOSS_CARPET((player, place) -> {
-        if (!place.getBelowMaterial().isAir()) {
-            place.set();
-        }
-    }, ItemTypes.MOSS_CARPET),
-
     CARPET((player, place) -> {
         if (!place.getBelowMaterial().isAir()) {
             place.set();
         }
     }, ItemTags.WOOL_CARPETS),
+
+    // Moss carpet is a carpet not under the carpets tag
+    MOSS_CARPET(CARPET.data, ItemTypes.MOSS_CARPET, ItemTypes.PALE_MOSS_CARPET),
 
     CHORUS_FLOWER((player, place) -> {
         WrappedBlockState blockstate = place.getBelowState();
@@ -1070,7 +1065,7 @@ public enum BlockPlaceResult {
             ItemTypes.WHITE_TULIP, ItemTypes.PINK_TULIP,
             ItemTypes.OXEYE_DAISY, ItemTypes.CORNFLOWER,
             ItemTypes.LILY_OF_THE_VALLEY, ItemTypes.PINK_PETALS,
-            ItemTypes.GRASS),
+            ItemTypes.SHORT_GRASS),
 
     POWDER_SNOW_BUCKET((player, place) -> {
         place.set();

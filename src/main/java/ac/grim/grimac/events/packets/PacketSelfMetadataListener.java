@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Optional;
 
 public class PacketSelfMetadataListener extends PacketListenerAbstract {
+
     public PacketSelfMetadataListener() {
         super(PacketListenerPriority.HIGH);
     }
@@ -67,6 +68,7 @@ public class PacketSelfMetadataListener extends PacketListenerAbstract {
                     // Remove the pose metadata from the list
                     metadataStuff.removeIf(element -> element.getIndex() == 6);
                     entityMetadata.setEntityMetadata(metadataStuff);
+                    event.markForReEncode(true);
                 }
 
                 EntityData watchable = WatchableIndexUtil.getIndex(entityMetadata.getEntityMetadata(), 0);
@@ -190,7 +192,7 @@ public class PacketSelfMetadataListener extends PacketListenerAbstract {
 
                             // Player might have gotten this packet
                             player.latencyUtils.addRealTimeTask(player.lastTransactionSent.get(),
-                                    () -> player.packetStateData.slowedByUsingItem = false);
+                                    () -> player.packetStateData.setSlowedByUsingItem(false));
 
                             int markedTransaction = player.lastTransactionSent.get();
 
@@ -204,7 +206,7 @@ public class PacketSelfMetadataListener extends PacketListenerAbstract {
                                 if (player.packetStateData.slowedByUsingItemTransaction < markedTransaction) {
                                     PacketPlayerDigging.handleUseItem(player, item, isOffhand ? InteractionHand.OFF_HAND : InteractionHand.MAIN_HAND);
                                     // The above line is a hack to fake activate use item
-                                    player.packetStateData.slowedByUsingItem = isActive;
+                                    player.packetStateData.setSlowedByUsingItem(isActive);
 
                                     if (isActive) {
                                         player.packetStateData.eatingHand = isOffhand ? InteractionHand.OFF_HAND : InteractionHand.MAIN_HAND;

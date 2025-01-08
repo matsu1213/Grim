@@ -2,36 +2,41 @@ package ac.grim.grimac.manager;
 
 import ac.grim.grimac.GrimAPI;
 import ac.grim.grimac.api.AbstractCheck;
+import ac.grim.grimac.api.config.ConfigManager;
+import ac.grim.grimac.api.config.ConfigReloadable;
 import ac.grim.grimac.api.events.CommandExecuteEvent;
 import ac.grim.grimac.checks.Check;
 import ac.grim.grimac.events.packets.ProxyAlertMessenger;
 import ac.grim.grimac.player.GrimPlayer;
 import ac.grim.grimac.utils.anticheat.LogUtil;
 import ac.grim.grimac.utils.anticheat.MessageUtil;
-import github.scarsz.configuralize.DynamicConfig;
 import io.github.retrooper.packetevents.util.folia.FoliaScheduler;
-import lombok.Getter;
-import lombok.Setter;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
 import java.util.*;
 
-public class PunishmentManager {
+public class PunishmentManager implements ConfigReloadable {
     GrimPlayer player;
     List<PunishGroup> groups = new ArrayList<>();
     String experimentalSymbol = "*";
+    private String alertString;
+    private boolean testMode;
+    private boolean printToConsole;
+    private String proxyAlertString = "";
 
     public PunishmentManager(GrimPlayer player) {
         this.player = player;
-        reload();
     }
 
-    public void reload() {
-        DynamicConfig config = GrimAPI.INSTANCE.getConfigManager().getConfig();
+    @Override
+    public void reload(ConfigManager config) {
         List<String> punish = config.getStringListElse("Punishments", new ArrayList<>());
         experimentalSymbol = config.getStringElse("experimental-symbol", "*");
-
+        alertString = config.getStringElse("alerts-format", "%prefix% &f%player% &bfailed &f%check_name% &f(x&c%vl%&f) &7%verbose%");
+        testMode = config.getBooleanElse("test-mode", false);
+        printToConsole = config.getBooleanElse("verbose.print-to-console", false);
+        proxyAlertString = config.getStringElse("alerts-format-proxy", "%prefix% &f[&cproxy&f] &f%player% &bfailed &f%check_name% &f(x&c%vl%&f) &7%verbose%");
         try {
             groups.clear();
 
@@ -91,82 +96,74 @@ public class PunishmentManager {
         }
     }
 
-    private String replaceAlertPlaceholders(String original, PunishGroup group, Check check, String alertString, String verbose) {
-        // Streams are slow but this isn't a hot path... it's fine.
-        String vl = group.violations.values().stream().filter((e) -> e == check).count() + "";
+    private String replaceAlertPlaceholders(String original, int vl, PunishGroup group, Check check, String alertString, String verbose) {
 
-        original = MessageUtil.format(original
+        original = original
                 .replace("[alert]", alertString)
                 .replace("[proxy]", alertString)
-                .replace("%check_name%", check.getCheckName())
+                .replace("%check_name%", check.getDisplayName())
                 .replace("%experimental%", check.isExperimental() ? experimentalSymbol : "")
-                .replace("%vl%", vl)
+                .replace("%vl%", Integer.toString(vl))
                 .replace("%verbose%", verbose)
-                .replace("%description%", check.getDescription())
-        );
+                .replace("%description%", check.getDescription());
 
-        original = GrimAPI.INSTANCE.getExternalAPI().replaceVariables(player, original, true);
+        original = MessageUtil.replacePlaceholders(player, original);
 
         return original;
     }
 
     public boolean handleAlert(GrimPlayer player, String verbose, Check check) {
-        String alertString = GrimAPI.INSTANCE.getConfigManager().getConfig().getStringElse("alerts-format", "%prefix% &f%player% &bfailed &f%check_name% &f(x&c%vl%&f) &7%verbose%");
-        boolean testMode = GrimAPI.INSTANCE.getConfigManager().getConfig().getBooleanElse("test-mode", false);
         boolean sentDebug = false;
 
         // Check commands
         for (PunishGroup group : groups) {
-            if (group.getChecks().contains(check)) {
-                int violationCount = group.getViolations().size();
-                for (ParsedCommand command : group.getCommands()) {
-                    String cmd = replaceAlertPlaceholders(command.getCommand(), group, check, alertString, verbose);
+            if (group.checks.contains(check)) {
+                final int vl = getViolations(group, check);
+                final int violationCount = group.violations.size();
+                for (ParsedCommand command : group.commands) {
+                    String cmd = replaceAlertPlaceholders(command.command, vl, group, check, alertString, verbose);
 
                     // Verbose that prints all flags
-                    if (GrimAPI.INSTANCE.getAlertManager().getEnabledVerbose().size() > 0 && command.command.equals("[alert]")) {
+                    if (!GrimAPI.INSTANCE.getAlertManager().getEnabledVerbose().isEmpty() && command.command.equals("[alert]")) {
                         sentDebug = true;
                         for (Player bukkitPlayer : GrimAPI.INSTANCE.getAlertManager().getEnabledVerbose()) {
-                            bukkitPlayer.sendMessage(cmd);
+                            MessageUtil.sendMessage(bukkitPlayer, MessageUtil.miniMessage(cmd));
                         }
-                        if (GrimAPI.INSTANCE.getConfigManager().getConfig().getBooleanElse("verbose.print-to-console", false)) {
-                            LogUtil.console(cmd); // Print verbose to console
+                        if (printToConsole) {
+                            LogUtil.console(MessageUtil.miniMessage(cmd)); // Print verbose to console
                         }
                     }
 
-                    if (violationCount >= command.getThreshold()) {
+                    if (violationCount >= command.threshold) {
                         // 0 means execute once
                         // Any other number means execute every X interval
-                        boolean inInterval = command.getInterval() == 0 ? (command.executeCount == 0) : (violationCount % command.getInterval() == 0);
+                        boolean inInterval = command.interval == 0 ? (command.executeCount == 0) : (violationCount % command.interval == 0);
                         if (inInterval) {
-                            CommandExecuteEvent executeEvent = new CommandExecuteEvent(player, check, cmd);
+                            CommandExecuteEvent executeEvent = new CommandExecuteEvent(player, check, verbose, cmd);
                             Bukkit.getPluginManager().callEvent(executeEvent);
                             if (executeEvent.isCancelled()) continue;
 
                             if (command.command.equals("[webhook]")) {
-                                String vl = group.violations.values().stream().filter((e) -> e == check).count() + "";
-                                GrimAPI.INSTANCE.getDiscordManager().sendAlert(player, verbose, check.getCheckName(), vl);
+                                GrimAPI.INSTANCE.getDiscordManager().sendAlert(player, verbose, check.getDisplayName(), vl);
                             } else if (command.command.equals("[proxy]")) {
-                                String proxyAlertString = GrimAPI.INSTANCE.getConfigManager().getConfig().getStringElse("alerts-format-proxy", "%prefix% &f[&cproxy&f] &f%player% &bfailed &f%check_name% &f(x&c%vl%&f) &7%verbose%");
-                                proxyAlertString = replaceAlertPlaceholders(command.getCommand(), group, check, proxyAlertString, verbose);
-                                ProxyAlertMessenger.sendPluginMessage(proxyAlertString);
+                                ProxyAlertMessenger.sendPluginMessage(replaceAlertPlaceholders(command.command, vl, group, check, proxyAlertString, verbose));
                             } else {
                                 if (command.command.equals("[alert]")) {
                                     sentDebug = true;
                                     if (testMode) { // secret test mode
-                                        player.user.sendMessage(cmd);
+                                        player.user.sendMessage(MessageUtil.miniMessage(cmd));
                                         continue;
                                     }
                                     cmd = "grim sendalert " + cmd; // Not test mode, we can add the command prefix
                                 }
 
                                 String finalCmd = cmd;
-                                FoliaScheduler.getGlobalRegionScheduler().run(GrimAPI.INSTANCE.getPlugin(), (dummy) -> {
-                                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalCmd);
-                                });
+                                FoliaScheduler.getGlobalRegionScheduler().run(GrimAPI.INSTANCE.getPlugin(), (dummy) ->
+                                        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), finalCmd));
                             }
                         }
 
-                        command.setExecuteCount(command.getExecuteCount() + 1);
+                        command.executeCount++;
                     }
                 }
             }
@@ -176,7 +173,7 @@ public class PunishmentManager {
 
     public void handleViolation(Check check) {
         for (PunishGroup group : groups) {
-            if (group.getChecks().contains(check)) {
+            if (group.checks.contains(check)) {
                 long currentTime = System.currentTimeMillis();
 
                 group.violations.put(currentTime, check);
@@ -185,17 +182,21 @@ public class PunishmentManager {
             }
         }
     }
+
+    private int getViolations(PunishGroup group, Check check) {
+        int vl = 0;
+        for (Check value : group.violations.values()) {
+            if (value == check) vl++;
+        }
+        return vl;
+    }
 }
 
 class PunishGroup {
-    @Getter
-    List<AbstractCheck> checks;
-    @Getter
-    List<ParsedCommand> commands;
-    @Getter
-    HashMap<Long, Check> violations = new HashMap<>();
-    @Getter
-    int removeViolationsAfter;
+    public final List<AbstractCheck> checks;
+    public final List<ParsedCommand> commands;
+    public final Map<Long, Check> violations = new HashMap<>();
+    public final int removeViolationsAfter;
 
     public PunishGroup(List<AbstractCheck> checks, List<ParsedCommand> commands, int removeViolationsAfter) {
         this.checks = checks;
@@ -205,15 +206,10 @@ class PunishGroup {
 }
 
 class ParsedCommand {
-    @Getter
-    int threshold;
-    @Getter
-    int interval;
-    @Getter
-    @Setter
-    int executeCount;
-    @Getter
-    String command;
+    public final int threshold;
+    public final int interval;
+    public final String command;
+    public int executeCount;
 
     public ParsedCommand(int threshold, int interval, String command) {
         this.threshold = threshold;

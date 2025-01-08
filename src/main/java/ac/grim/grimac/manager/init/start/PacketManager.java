@@ -16,7 +16,6 @@ public class PacketManager implements Initable {
     public void start() {
         LogUtil.info("Registering packets...");
 
-        PacketEvents.getAPI().getEventManager().registerListener(new PacketConfigurationListener());
         PacketEvents.getAPI().getEventManager().registerListener(new PacketPlayerJoinQuit());
         PacketEvents.getAPI().getEventManager().registerListener(new PacketPingListener());
         PacketEvents.getAPI().getEventManager().registerListener(new PacketPlayerDigging());
@@ -30,6 +29,10 @@ public class PacketManager implements Initable {
         PacketEvents.getAPI().getEventManager().registerListener(new CheckManagerListener());
         PacketEvents.getAPI().getEventManager().registerListener(new PacketPlayerSteer());
 
+        if (PacketEvents.getAPI().getServerManager().getVersion().isNewerThanOrEquals(ServerVersion.V_1_13)) {
+            PacketEvents.getAPI().getEventManager().registerListener(new PacketServerTags());
+        }
+
         if (PacketEvents.getAPI().getServerManager().getVersion().isNewerThanOrEquals(ServerVersion.V_1_18)) {
             PacketEvents.getAPI().getEventManager().registerListener(new PacketWorldReaderEighteen());
         } else if (PacketEvents.getAPI().getServerManager().getVersion().isOlderThanOrEquals(ServerVersion.V_1_8_8)) {
@@ -39,7 +42,7 @@ public class PacketManager implements Initable {
         }
 
         PacketEvents.getAPI().getEventManager().registerListener(new ProxyAlertMessenger());
-        PacketEvents.getAPI().getEventManager().registerListener(new PacketSetWrapperNull());
+        PacketEvents.getAPI().getEventManager().registerListener(new PacketHidePlayerInfo());
 
         PacketEvents.getAPI().init();
     }

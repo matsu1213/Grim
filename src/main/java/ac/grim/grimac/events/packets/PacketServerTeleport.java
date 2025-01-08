@@ -6,14 +6,12 @@ import ac.grim.grimac.utils.data.Pair;
 import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.event.PacketListenerAbstract;
 import com.github.retrooper.packetevents.event.PacketListenerPriority;
-import com.github.retrooper.packetevents.event.PacketReceiveEvent;
 import com.github.retrooper.packetevents.event.PacketSendEvent;
 import com.github.retrooper.packetevents.manager.server.ServerVersion;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.protocol.teleport.RelativeFlag;
 import com.github.retrooper.packetevents.util.Vector3d;
-import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientTeleportConfirm;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerPlayerPositionAndLook;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerVehicleMove;
 import org.bukkit.Location;
@@ -62,20 +60,22 @@ public class PacketServerTeleport extends PacketListenerAbstract {
             if (player.getClientVersion().isOlderThanOrEquals(ClientVersion.V_1_8)) {
                 if (teleport.isRelativeFlag(RelativeFlag.X)) {
                     pos = pos.add(new Vector3d(player.x, 0, 0));
+                    teleport.setRelative(RelativeFlag.X, false);
                 }
 
                 if (teleport.isRelativeFlag(RelativeFlag.Y)) {
                     pos = pos.add(new Vector3d(0, player.y, 0));
+                    teleport.setRelative(RelativeFlag.Y, false);
                 }
 
                 if (teleport.isRelativeFlag(RelativeFlag.Z)) {
                     pos = pos.add(new Vector3d(0, 0, player.z));
+                    teleport.setRelative(RelativeFlag.Z, false);
                 }
 
                 teleport.setX(pos.getX());
                 teleport.setY(pos.getY());
                 teleport.setZ(pos.getZ());
-                teleport.setRelativeMask((byte) (teleport.getRelativeFlags().getMask() & 0b11000));
             }
 
             player.sendTransaction();
@@ -84,9 +84,7 @@ public class PacketServerTeleport extends PacketListenerAbstract {
 
             if (teleport.isDismountVehicle()) {
                 // Remove player from vehicle
-                event.getTasksAfterSend().add(() -> {
-                    player.compensatedEntities.getSelf().eject();
-                });
+                event.getTasksAfterSend().add(() -> player.compensatedEntities.getSelf().eject());
             }
 
             // For some reason teleports on 1.7 servers are offset by 1.62?

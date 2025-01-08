@@ -24,7 +24,7 @@ package ac.grim.grimac.utils.math;
 // Update a few months later
 
 // WHY DID THEY CHANGE FASTMATH
-// This is impossible, and I give up! 
+// This is impossible, and I give up!
 //
 // Instead of fixing the damn issue of changing vanilla mechanics, the new version patches some
 // issues with half angles.  Yes, it was wrong, so they made it more accurate, but this makes our
@@ -38,11 +38,11 @@ package ac.grim.grimac.utils.math;
 //
 public class OptifineFastMath {
     private static final float[] SIN_TABLE_FAST = new float[4096];
-    private static final float radToIndex = roundToFloat(651.8986469044033D);
+    private static final float radToIndex = roundToFloat(651.8986469044033d);
 
     static {
         for (int j = 0; j < SIN_TABLE_FAST.length; ++j) {
-            SIN_TABLE_FAST[j] = roundToFloat(StrictMath.sin((double) j * Math.PI * 2.0D / 4096.0D));
+            SIN_TABLE_FAST[j] = roundToFloat(StrictMath.sin((double) j * Math.PI * 2d / 4096d));
         }
     }
 
@@ -51,10 +51,10 @@ public class OptifineFastMath {
     }
 
     public static float cos(float value) {
-        return SIN_TABLE_FAST[(int) (value * radToIndex + 1024.0F) & 4095];
+        return SIN_TABLE_FAST[(int) (value * radToIndex + 1024f) & 4095];
     }
 
     public static float roundToFloat(double d) {
-        return (float) ((double) Math.round(d * 1.0E8D) / 1.0E8D);
+        return (float) ((double) Math.round(d * 1.0E8d) / 1.0E8d);
     }
 }

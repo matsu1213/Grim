@@ -1,6 +1,7 @@
 package ac.grim.grimac.checks.impl.velocity;
 
 import ac.grim.grimac.GrimAPI;
+import ac.grim.grimac.api.config.ConfigManager;
 import ac.grim.grimac.checks.Check;
 import ac.grim.grimac.checks.CheckData;
 import ac.grim.grimac.checks.type.PostPredictionCheck;
@@ -65,6 +66,7 @@ public class KnockbackHandler extends Check implements PostPredictionCheck {
             if (playerVelocity.getY() == -0.04) {
                 velocity.setVelocity(playerVelocity.add(new Vector3d(0, 1 / 8000D, 0)));
                 playerVelocity = velocity.getVelocity();
+                event.markForReEncode(true);
             }
 
             // Wrap velocity between two transactions
@@ -76,15 +78,17 @@ public class KnockbackHandler extends Check implements PostPredictionCheck {
 
     @NotNull public Pair<VelocityData, Vector> getFutureKnockback() {
         // Chronologically in the future
-        if (firstBreadMap.size() > 0) {
+        if (!firstBreadMap.isEmpty()) {
             VelocityData data = firstBreadMap.peek();
             return new Pair<>(data, data != null ? data.vector : null);
         }
+
         // Less in the future
-        if (lastKnockbackKnownTaken.size() > 0) {
+        if (!lastKnockbackKnownTaken.isEmpty()) {
             VelocityData data = lastKnockbackKnownTaken.peek();
             return new Pair<>(data, data != null ? data.vector : null);
         }
+
         // Uncertain, might be in the future
         if (player.firstBreadKB != null && player.likelyKB == null) {
             VelocityData data = player.firstBreadKB;
@@ -200,18 +204,11 @@ public class KnockbackHandler extends Check implements PostPredictionCheck {
                 threshold = Math.min(threshold + player.likelyKB.offset, ceiling);
                 if (player.likelyKB.isSetback) { // Don't increase violations if this velocity was setback, just teleport and resend them velocity.
                     player.getSetbackTeleportUtil().executeViolationSetback();
-                } else if (flag()) { // This velocity was sent by the server.
+                } else if (flagAndAlert(player.likelyKB.offset == Integer.MAX_VALUE ? "ignored knockback"
+                        : "o: " + formatOffset(player.likelyKB.offset))) { // This velocity was sent by the server.
                     if (player.likelyKB.offset >= immediate || threshold >= maxAdv) {
                         player.getSetbackTeleportUtil().executeViolationSetback();
                     }
-
-                    String formatOffset = "o: " + formatOffset(player.likelyKB.offset);
-
-                    if (player.likelyKB.offset == Integer.MAX_VALUE) {
-                        formatOffset = "ignored knockback";
-                    }
-
-                    alert(formatOffset);
                 } else {
                     reward();
                 }
@@ -240,15 +237,14 @@ public class KnockbackHandler extends Check implements PostPredictionCheck {
     }
 
     @Override
-    public void reload() {
-        super.reload();
-        offsetToFlag = getConfig().getDoubleElse("Knockback.threshold", 0.001);
-        maxAdv = getConfig().getDoubleElse("Knockback.max-advantage", 1);
-        immediate = getConfig().getDoubleElse("Knockback.immediate-setback-threshold", 0.1);
-        multiplier = getConfig().getDoubleElse("Knockback.setback-decay-multiplier", 0.999);
-        ceiling = getConfig().getDoubleElse("Knockback.max-ceiling", 4);
-
+    public void onReload(ConfigManager config) {
+        offsetToFlag = config.getDoubleElse("Knockback.threshold", 0.001);
+        maxAdv = config.getDoubleElse("Knockback.max-advantage", 1);
+        immediate = config.getDoubleElse("Knockback.immediate-setback-threshold", 0.1);
+        multiplier = config.getDoubleElse("Knockback.setback-decay-multiplier", 0.999);
+        ceiling = config.getDoubleElse("Knockback.max-ceiling", 4);
         if (maxAdv < 0) maxAdv = Double.MAX_VALUE;
         if (immediate < 0) immediate = Double.MAX_VALUE;
     }
+
 }
