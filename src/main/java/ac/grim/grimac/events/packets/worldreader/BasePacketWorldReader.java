@@ -111,7 +111,7 @@ public class BasePacketWorldReader extends PacketListenerAbstract {
         boolean shouldPostTrans = Math.abs(player.x - chunkCenterX) < 16 && Math.abs(player.z - chunkCenterZ) < 16;
 
         for (TeleportData teleports : player.getSetbackTeleportUtil().pendingTeleports) {
-            if (teleports.getFlags().isRelative()) {
+            if (teleports.isRelative()) {
                 continue; // Worse that will happen is people will get an extra setback...
             }
             shouldPostTrans = shouldPostTrans || (Math.abs(teleports.getLocation().getX() - chunkCenterX) < 16 && Math.abs(teleports.getLocation().getZ() - chunkCenterZ) < 16);
