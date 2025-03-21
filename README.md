@@ -1,8 +1,24 @@
-# GrimAC
+# GrimAC (+ Lag Mitigation)
 
 GrimAC is an open source Minecraft anticheat designed for 1.21 and supports 1.8-1.21. It is free while in beta. It will eventually become paid and/or will include offering additional subscription based paid checks. Geyser players are fully exempt.
 
 This project is considered feature complete for the 2.0 (open-source) branch of this project. If you would like a bugfix or enhancement and cannot sponsor the work, pull requests are welcome.
+
+## Lag Mitigation
+
+This fork adds a "lag mitigation" feature to Grim. (Since it does not align with Grim’s policy, I do not plan to submit a pull request unless requested.)
+
+Currently, the most basic lag mitigation is implemented. It is recommended to test it before deploying it to production.
+
+TODO: 
+ - [x] Basic lag mitigation (most accurate) 
+ - [ ] Input prediction (needs help) 
+ - [ ] Knockback prediction 
+ - [ ] Higher tick rate 
+ - [ ] Blink mitigation
+
+Config:  
+`LagMitigation.maxPredictTicks` - Sets the maximum number of predicted ticks. A higher value can compensate for more lag, but the predicted position may become less accurate. It is recommended to set this to a realistic value to prevent abuse.
 
 ## Downloads
 - [Modrinth](https://modrinth.com/plugin/grimac)
