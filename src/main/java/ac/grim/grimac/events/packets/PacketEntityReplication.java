@@ -81,6 +81,7 @@ public class PacketEntityReplication extends Check implements PacketCheck {
 
     @Override
     public void onPacketSend(PacketSendEvent event) {
+        if (event.isCancelled()) return;
         // ensure grim is the one that sent the transaction
         if ((event.getPacketType() == PacketType.Play.Server.PING || event.getPacketType() == PacketType.Play.Server.WINDOW_CONFIRMATION) && player.packetStateData.lastServerTransWasValid) {
             despawnedEntitiesThisTransaction.clear();
@@ -103,16 +104,22 @@ public class PacketEntityReplication extends Check implements PacketCheck {
         }
         else if (event.getPacketType() == PacketType.Play.Server.ENTITY_RELATIVE_MOVE) {
             WrapperPlayServerEntityRelativeMove move = new WrapperPlayServerEntityRelativeMove(event);
-            handleMoveEntity(event, move.getEntityId(), move.getDeltaX(), move.getDeltaY(), move.getDeltaZ(), null, null, true, true);
+            boolean cancel = handleMoveEntity(move.getEntityId(), move.getDeltaX(), move.getDeltaY(), move.getDeltaZ(), null, null, move.isOnGround(), true, true);
+            if (cancel) {
+                event.setCancelled(true);
+            }
         }
         else if (event.getPacketType() == PacketType.Play.Server.ENTITY_RELATIVE_MOVE_AND_ROTATION) {
             WrapperPlayServerEntityRelativeMoveAndRotation move = new WrapperPlayServerEntityRelativeMoveAndRotation(event);
-            handleMoveEntity(event, move.getEntityId(), move.getDeltaX(), move.getDeltaY(), move.getDeltaZ(), move.getYaw() * 0.7111111F, move.getPitch() * 0.7111111F, true, true);
+            boolean cancel = handleMoveEntity(move.getEntityId(), move.getDeltaX(), move.getDeltaY(), move.getDeltaZ(), move.getYaw() * 0.7111111F, move.getPitch() * 0.7111111F, move.isOnGround(), true, true);
+            if (cancel) {
+                event.setCancelled(true);
+            }
         }
         else if (event.getPacketType() == PacketType.Play.Server.ENTITY_TELEPORT) {
             WrapperPlayServerEntityTeleport move = new WrapperPlayServerEntityTeleport(event);
             Vector3d pos = move.getPosition();
-            handleMoveEntity(event, move.getEntityId(), pos.getX(), pos.getY(), pos.getZ(), move.getYaw(), move.getPitch(), false, true);
+            handleMoveEntity(move.getEntityId(), pos.getX(), pos.getY(), pos.getZ(), move.getYaw(), move.getPitch(), move.isOnGround(), false, true);
         }
         else if (event.getPacketType() == PacketType.Play.Server.ENTITY_POSITION_SYNC) {
             // ENTITY_TELEPORT but without relative flags
@@ -121,11 +128,14 @@ public class PacketEntityReplication extends Check implements PacketCheck {
             final Vector3d pos = values.getPosition();
             // TODO this isn't technically correct
             // If the position sync is to a pos > 4096 from the entity pos, client does some special stuff without interpolation
-            handleMoveEntity(event, move.getId(), pos.getX(), pos.getY(), pos.getZ(), values.getYaw(), values.getPitch(), false, true);
+            handleMoveEntity(move.getId(), pos.getX(), pos.getY(), pos.getZ(), values.getYaw(), values.getPitch(), move.isOnGround(), false, true);
         }
         else if (event.getPacketType() == PacketType.Play.Server.ENTITY_ROTATION) { // Affects interpolation
             WrapperPlayServerEntityRotation move = new WrapperPlayServerEntityRotation(event);
-            handleMoveEntity(event, move.getEntityId(), 0, 0, 0, move.getYaw() * 0.7111111F, move.getPitch() * 0.7111111F, true, false);
+            boolean cancel = handleMoveEntity(move.getEntityId(), 0, 0, 0, move.getYaw() * 0.7111111F, move.getPitch() * 0.7111111F, move.isOnGround(), true, false);
+            if (cancel) {
+                event.setCancelled(true);
+            }
         }
         else if (event.getPacketType() == PacketType.Play.Server.ENTITY_METADATA) {
             WrapperPlayServerEntityMetadata entityMetadata = new WrapperPlayServerEntityMetadata(event);
@@ -414,7 +424,7 @@ public class PacketEntityReplication extends Check implements PacketCheck {
         });
     }
 
-    private void handleMoveEntity(PacketSendEvent event, int entityId, double deltaX, double deltaY, double deltaZ, Float yaw, Float pitch, boolean isRelative, boolean hasPos) {
+    public boolean handleMoveEntity(int entityId, double deltaX, double deltaY, double deltaZ, Float yaw, Float pitch, boolean onGround, boolean isRelative, boolean hasPos) {
         TrackerData data = player.compensatedEntities.getTrackedEntity(entityId);
 
         final boolean didNotSendPreWave = hasSentPreWavePacket.compareAndSet(false, true);
@@ -443,17 +453,20 @@ public class PacketEntityReplication extends Check implements PacketCheck {
                 if (vanillaVehicleFlight ||
                         ((Math.abs(deltaX) >= 3.9375 || Math.abs(deltaY) >= 3.9375 || Math.abs(deltaZ) >= 3.9375) && player.getClientVersion().isOlderThan(ClientVersion.V_1_9) && PacketEvents.getAPI().getServerManager().getVersion().isNewerThanOrEquals(ServerVersion.V_1_9))) {
                     player.user.writePacket(new WrapperPlayServerEntityTeleport(entityId, new Vector3d(data.getX() + deltaX, data.getY() + deltaY, data.getZ() + deltaZ), yaw == null ? data.getXRot() : yaw, pitch == null ? data.getYRot() : pitch, false));
-                    event.setCancelled(true);
-                    return;
+                    return true;
                 }
 
                 data.setX(data.getX() + deltaX);
                 data.setY(data.getY() + deltaY);
                 data.setZ(data.getZ() + deltaZ);
+                data.setOnGround(onGround);
+                data.setDelta(new Vector3d(deltaX, deltaY, deltaZ));
             } else {
+                data.setDelta(new Vector3d(deltaX - data.getX(), deltaY - data.getY(), deltaZ - data.getZ()));
                 data.setX(deltaX);
                 data.setY(deltaY);
                 data.setZ(deltaZ);
+                data.setOnGround(onGround);
             }
             if (yaw != null) {
                 data.setXRot(yaw);
@@ -485,6 +498,8 @@ public class PacketEntityReplication extends Check implements PacketCheck {
             if (entity == null) return;
             entity.onSecondTransaction();
         });
+
+        return false;
     }
 
     public void addEntity(int entityID, UUID uuid, EntityType type, Vector3d position, float xRot, float yRot, List<EntityData> entityMetadata, int extraData) {
@@ -492,7 +507,7 @@ public class PacketEntityReplication extends Check implements PacketCheck {
             player.sendTransaction();
         }
 
-        player.compensatedEntities.serverPositionsMap.put(entityID, new TrackerData(position.getX(), position.getY(), position.getZ(), xRot, yRot, type, player.lastTransactionSent.get()));
+        player.compensatedEntities.serverPositionsMap.put(entityID, new TrackerData(position.getX(), position.getY(), position.getZ(), xRot, yRot, false, type, player.lastTransactionSent.get()));
 
         player.latencyUtils.addRealTimeTask(player.lastTransactionSent.get(), () -> {
             player.compensatedEntities.addEntity(entityID, uuid, type, position, xRot, extraData);

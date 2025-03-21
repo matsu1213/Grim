@@ -82,6 +82,7 @@ public class CheckManager {
         packetChecks = new ImmutableClassToInstanceMap.Builder<PacketCheck>()
                 .put(Hitboxes.class, new Hitboxes(player))
                 .put(Reach.class, new Reach(player))
+                .put(PlayerCompensationRunner.class, new PlayerCompensationRunner(player))
                 .put(PacketEntityReplication.class, new PacketEntityReplication(player))
                 .put(PacketChangeGameState.class, new PacketChangeGameState(player))
                 .put(CompensatedInventory.class, new CompensatedInventory(player))

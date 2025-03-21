@@ -64,6 +64,16 @@ public class PlayerDataManager {
         return playerDataMap.get(user);
     }
 
+    @Nullable
+    public GrimPlayer getPlayer(final int entityId) {
+        for (User user : playerDataMap.keySet()) {
+            if (user.getEntityId() == entityId) {
+                return playerDataMap.get(user);
+            }
+        }
+        return null;
+    }
+
     public void addUser(final User user) {
         if (shouldCheck(user)) {
             GrimPlayer player = new GrimPlayer(user);
