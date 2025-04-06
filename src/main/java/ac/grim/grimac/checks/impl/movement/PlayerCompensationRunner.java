@@ -39,8 +39,7 @@ public class PlayerCompensationRunner extends Check implements PacketCheck, Tick
 
         if (WrapperPlayClientPlayerFlying.isFlying(event.getPacketType())
                 && !player.packetStateData.lastPacketWasOnePointSeventeenDuplicate
-                && !player.packetStateData.lastPacketWasTeleport) {
-
+                && player.getSetbackTeleportUtil().hasAcceptedSpawnTeleport) {
             player.compensatedPlayer.doMiniPrediction(maxPredictTicks, maxPredictSprintTicks, enableVelocityCompensation);
         }
     }
@@ -60,23 +59,18 @@ public class PlayerCompensationRunner extends Check implements PacketCheck, Tick
                 TrackerData data = player.compensatedEntities.getTrackedEntity(packet.getEntityId());
                 if (data == null) return;
                 sendPositionUpdate(event, packet.getEntityId(), data.getXRot(), data.getYRot());
-                //event.setCancelled(true);
             } else if (event.getPacketType() == PacketType.Play.Server.ENTITY_RELATIVE_MOVE_AND_ROTATION) {
                 WrapperPlayServerEntityRelativeMoveAndRotation packet = new WrapperPlayServerEntityRelativeMoveAndRotation(event);
                 sendPositionUpdate(event, packet.getEntityId(), packet.getYaw(), packet.getPitch());
-                //event.setCancelled(true);
             } else if (event.getPacketType() == PacketType.Play.Server.ENTITY_TELEPORT) {
                 WrapperPlayServerEntityTeleport packet = new WrapperPlayServerEntityTeleport(event);
                 sendPositionUpdate(event, packet.getEntityId(), packet.getYaw(), packet.getPitch());
-                //event.setCancelled(true);
             } else if (event.getPacketType() == PacketType.Play.Server.ENTITY_POSITION_SYNC) {
                 WrapperPlayServerEntityPositionSync packet = new WrapperPlayServerEntityPositionSync(event);
                 sendPositionUpdate(event, packet.getId(), packet.getValues().getYaw(), packet.getValues().getPitch());
-                //event.setCancelled(true);
             } else if (event.getPacketType() == PacketType.Play.Server.ENTITY_ROTATION) {
                 WrapperPlayServerEntityRotation packet = new WrapperPlayServerEntityRotation(event);
                 sendPositionUpdate(event, packet.getEntityId(), packet.getYaw(), packet.getPitch());
-                //event.setCancelled(true);
             }
         }catch (Exception e) {
             e.printStackTrace();
@@ -128,6 +122,7 @@ public class PlayerCompensationRunner extends Check implements PacketCheck, Tick
 
         boolean cancel;
 
+
         if (relative) {
             cancel = player.checkManager.getEntityReplication().handleMoveEntity(targetEntityId, delta.getX(), delta.getY(), delta.getZ(), yaw, pitch, predictedGround, true, true);
         } else {
@@ -143,7 +138,6 @@ public class PlayerCompensationRunner extends Check implements PacketCheck, Tick
             } else {
                 player.user.sendPacketSilently(new WrapperPlayServerEntityTeleport(targetEntityId, new Vector3d(result.getX(), result.getY(), result.getZ()), yaw, pitch, predictedGround));
             }
-            player.user.sendPacketSilently(new WrapperPlayServerEntityTeleport(targetEntityId, new Vector3d(result.getX(), result.getY(), result.getZ()), yaw, pitch, predictedGround));
         } else if (delta.getX() == 0 && delta.getY() == 0 && delta.getZ() == 0) {
             player.user.sendPacketSilently(new WrapperPlayServerEntityRotation(targetEntityId, yaw, pitch, predictedGround));
         } else if (yaw == lastPos.getXRot() && pitch == lastPos.getYRot()) {

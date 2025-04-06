@@ -3,6 +3,7 @@ package ac.grim.grimac.utils.latency;
 import ac.grim.grimac.player.GrimPlayer;
 import ac.grim.grimac.utils.collisions.datatypes.SimpleCollisionBox;
 import ac.grim.grimac.utils.data.KnownInput;
+import ac.grim.grimac.utils.data.LastInstance;
 import ac.grim.grimac.utils.data.Pair;
 import ac.grim.grimac.utils.nmsutil.Collisions;
 import ac.grim.grimac.utils.nmsutil.GetBoundingBox;
@@ -37,23 +38,23 @@ public class CompensatedPlayer {
             // end of tick
             if (lastOnGround) {
                 if (v.getX() != 0) {
-                    v.setX(v.getX() * 0.6 * 0.91);
+                    //v.setX(v.getX() * 0.6 * 0.91);
                 }
                 if (v.getY() != 0) {
                     v.setY((v.getY() - 0.08) * 0.98);
                 }
                 if (v.getZ() != 0) {
-                    v.setZ(v.getZ() * 0.6 * 0.91);
+                    //v.setZ(v.getZ() * 0.6 * 0.91);
                 }
             } else {
                 if(v.getX() != 0) {
-                    v.setX(v.getX() * 0.91);
+                    //v.setX(v.getX() * 0.91);
                 }
                 if (v.getY() != 0) {
                     v.setY((v.getY() - 0.08) * 0.98);
                 }
                 if (v.getZ() != 0) {
-                    v.setZ(v.getZ() * 0.91);
+                    //v.setZ(v.getZ() * 0.91);
                 }
             }
 
