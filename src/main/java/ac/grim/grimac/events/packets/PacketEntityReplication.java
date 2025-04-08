@@ -269,7 +269,7 @@ public class PacketEntityReplication extends Check implements PacketCheck {
                     if (slot.getSlot() - 36 == player.packetStateData.lastSlotSelected) {
                         player.packetStateData.setSlowedByUsingItem(false);
 
-                        if (player.isMitigateDesyncNoSlow()) {
+                        if (player.isResetItemUsageOnItemUpdate()) {
                             BukkitNMS.resetItemUsage(player.bukkitPlayer);
                         }
                     }
@@ -279,7 +279,7 @@ public class PacketEntityReplication extends Check implements PacketCheck {
                     if (slot.getSlot() - 36 == player.packetStateData.lastSlotSelected) {
                         player.packetStateData.setSlowedByUsingItem(false);
 
-                        if (player.isMitigateDesyncNoSlow()) {
+                        if (player.isResetItemUsageOnItemUpdate()) {
                             BukkitNMS.resetItemUsage(player.bukkitPlayer);
                         }
                     }
