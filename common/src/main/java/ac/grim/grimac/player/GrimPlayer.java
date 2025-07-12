@@ -34,11 +34,7 @@ import ac.grim.grimac.utils.data.packetentity.PacketEntitySelf;
 import ac.grim.grimac.utils.data.tags.SyncedTags;
 import ac.grim.grimac.utils.enums.FluidTag;
 import ac.grim.grimac.utils.enums.Pose;
-import ac.grim.grimac.utils.latency.CompensatedEntities;
-import ac.grim.grimac.utils.latency.CompensatedFireworks;
-import ac.grim.grimac.utils.latency.CompensatedInventory;
-import ac.grim.grimac.utils.latency.CompensatedWorld;
-import ac.grim.grimac.utils.latency.LatencyUtils;
+import ac.grim.grimac.utils.latency.*;
 import ac.grim.grimac.utils.math.GrimMath;
 import ac.grim.grimac.utils.math.Location;
 import ac.grim.grimac.utils.math.TrigHandler;
@@ -215,6 +211,7 @@ public class GrimPlayer implements GrimUser {
     public final CompensatedFireworks fireworks;
     public final CompensatedWorld compensatedWorld;
     public final CompensatedEntities compensatedEntities;
+    public final CompensatedPlayer compensatedPlayer;
     public final LatencyUtils latencyUtils = new LatencyUtils(this);
     public final PointThreeEstimator pointThreeEstimator;
     public final TrigHandler trigHandler = new TrigHandler(this);
@@ -286,6 +283,7 @@ public class GrimPlayer implements GrimUser {
 
         compensatedWorld = new CompensatedWorld(this);
         compensatedEntities = new CompensatedEntities(this);
+        compensatedPlayer = new CompensatedPlayer(this);
         uncertaintyHandler = new UncertaintyHandler(this); // must be after checkmanager
         pointThreeEstimator = new PointThreeEstimator(this);
 

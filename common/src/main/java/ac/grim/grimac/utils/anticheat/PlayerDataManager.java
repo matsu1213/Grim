@@ -36,6 +36,16 @@ public class PlayerDataManager {
         return player;
     }
 
+    @Nullable
+    public GrimPlayer getPlayer(final int entityId) {
+        for (User user : playerDataMap.keySet()) {
+            if (user.getEntityId() == entityId) {
+                return playerDataMap.get(user);
+            }
+        }
+        return null;
+    }
+
     public boolean shouldCheck(@NonNull User user) {
         if (exemptUsers.contains(user)) return false;
         if (!ChannelHelper.isOpen(user.getChannel())) return false;

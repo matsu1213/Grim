@@ -37,10 +37,7 @@ import ac.grim.grimac.checks.impl.groundspoof.NoFall;
 import ac.grim.grimac.checks.impl.misc.ClientBrand;
 import ac.grim.grimac.checks.impl.misc.GhostBlockMitigation;
 import ac.grim.grimac.checks.impl.misc.TransactionOrder;
-import ac.grim.grimac.checks.impl.movement.NoSlow;
-import ac.grim.grimac.checks.impl.movement.PredictionRunner;
-import ac.grim.grimac.checks.impl.movement.SetbackBlocker;
-import ac.grim.grimac.checks.impl.movement.VehiclePredictionRunner;
+import ac.grim.grimac.checks.impl.movement.*;
 import ac.grim.grimac.checks.impl.multiactions.*;
 import ac.grim.grimac.checks.impl.packetorder.*;
 import ac.grim.grimac.checks.impl.misc.Post;
@@ -122,6 +119,7 @@ public class CheckManager {
         packetChecks = new ImmutableClassToInstanceMap.Builder<PacketCheck>()
                 .put(PacketOrderProcessor.class, player.packetOrderProcessor)
                 .put(Reach.class, new Reach(player))
+                .put(PlayerCompensationRunner.class, new PlayerCompensationRunner(player))
                 .put(PacketEntityReplication.class, new PacketEntityReplication(player))
                 .put(PacketChangeGameState.class, new PacketChangeGameState(player))
                 .put(CompensatedInventory.class, new CompensatedInventory(player))

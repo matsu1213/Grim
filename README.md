@@ -1,5 +1,5 @@
 <div align="center">
- <h1>GrimAC</h1>
+ <h1>GrimAC + Lag Mitigation</h1>
 
  <div>
   <a href="https://github.com/GrimAnticheat/Grim/actions/workflows/gradle-publish.yml">
@@ -17,6 +17,22 @@ support for versions 1.8 and higher. Geyser players are fully exempt from the an
 false positives. This project is currently free and open source, but future versions will eventually
 become paid and/or will include additional subscription based paid checks. If you would like a
 bugfix or enhancement and cannot sponsor the work, pull requests are welcome.
+
+## Lag Mitigation
+
+This fork adds a "lag mitigation" feature to Grim. (Since it does not align with Grim’s policy, I do not plan to submit a pull request unless requested.)
+
+Currently, the most basic lag mitigation is implemented. It is recommended to test it before deploying it to production.
+
+TODO:
+- [x] Basic lag mitigation (most accurate)
+- [ ] Input prediction (needs help)
+- [ ] Knockback prediction
+- [ ] Higher tick rate
+- [ ] Blink mitigation
+
+Config:  
+`LagMitigation.maxPredictTicks` - Sets the maximum number of predicted ticks. A higher value can compensate for more lag, but the predicted position may become less accurate. It is recommended to set this to a realistic value to prevent abuse.
 
 ## Downloads
 
