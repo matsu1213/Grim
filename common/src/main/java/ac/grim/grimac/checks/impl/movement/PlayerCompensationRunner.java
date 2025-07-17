@@ -4,7 +4,6 @@ import ac.grim.grimac.GrimAPI;
 import ac.grim.grimac.api.config.ConfigManager;
 import ac.grim.grimac.checks.Check;
 import ac.grim.grimac.checks.type.PacketCheck;
-import ac.grim.grimac.manager.tick.Tickable;
 import ac.grim.grimac.player.GrimPlayer;
 import ac.grim.grimac.utils.data.Pair;
 import ac.grim.grimac.utils.data.TrackerData;
@@ -20,10 +19,11 @@ import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 import com.github.retrooper.packetevents.util.Vector3d;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerFlying;
 import com.github.retrooper.packetevents.wrapper.play.server.*;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public class PlayerCompensationRunner extends Check implements PacketCheck, Tickable {
+public class PlayerCompensationRunner extends Check implements PacketCheck {
     private boolean enabled = false;
     private int maxPredictTicks = 4;
     private int maxPredictSprintTicks = 1;
@@ -82,16 +82,21 @@ public class PlayerCompensationRunner extends Check implements PacketCheck, Tick
         }
     }
 
-    @Override
     public void tick() {
         if (!enabled) return;
         if (!enableBlinkCompensation && !increaseTickRate) return;
+
+        player.compensatedEntities.entityMap.forEach((id, entity) -> {
+            if (entity.type.equals(EntityTypes.PLAYER)) {
+                sendPositionUpdate(null, id, null, null);
+            }
+        });
     }
 
-    public void sendPositionUpdate(PacketSendEvent event, int targetEntityId, float yaw, float pitch) {
+    public void sendPositionUpdate(@Nullable PacketSendEvent event, int targetEntityId, @Nullable Float yaw, @Nullable Float pitch) {
         if (!enabled) return;
         if (processing.get()) return;
-        if (event.isCancelled()) return;
+        if (event != null && event.isCancelled()) return;
 
         PacketEntity entity = player.compensatedEntities.getEntity(targetEntityId);
         if (entity == null) return;
@@ -101,7 +106,13 @@ public class PlayerCompensationRunner extends Check implements PacketCheck, Tick
         if (lastPos == null) return;
 
         GrimPlayer targetPlayer = GrimAPI.INSTANCE.getPlayerDataManager().getPlayer(targetEntityId);
-        if(targetPlayer == null) return;
+        if (targetPlayer == null) return;
+
+        // if the player is exempted, we should not cancel the packet
+        if (increaseTickRate && event != null) {
+            event.setCancelled(true);
+            return;
+        }
 
         int targetPing = targetPlayer.getTransactionPing();
         int playerPing = player.getTransactionPing();
@@ -127,8 +138,15 @@ public class PlayerCompensationRunner extends Check implements PacketCheck, Tick
         boolean near = Math.abs(delta.getX()) < 8 && Math.abs(delta.getY()) < 8 && Math.abs(delta.getZ()) < 8;
         boolean relative = near && predictedGround == lastPos.isOnGround();
 
-        event.setCancelled(true);
+        if (event != null) {
+            event.setCancelled(true);
+        }
         processing.set(true);
+
+        if (yaw == null || pitch == null) {
+            yaw = targetPlayer.xRot;
+            pitch = targetPlayer.yRot;
+        }
 
         if (!relative) {
             if (!near) {
