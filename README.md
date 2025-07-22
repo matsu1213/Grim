@@ -28,11 +28,12 @@ TODO:
 - [x] Basic lag mitigation (most accurate)
 - [ ] Input prediction (needs help)
 - [ ] Knockback prediction
-- [ ] Higher tick rate
+- [x] Higher tick rate
 - [ ] Blink mitigation
 
 Config:  
 `LagMitigation.maxPredictTicks` - Sets the maximum number of predicted ticks. A higher value can compensate for more lag, but the predicted position may become less accurate. It is recommended to set this to a realistic value to prevent abuse.
+`LagMitigation.increase-tick-rate` - If enabled, Grim will send movement packets at a higher tick rate to the client. (10pps -> 20pps)
 
 ## Downloads
 

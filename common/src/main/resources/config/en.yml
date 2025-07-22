@@ -205,4 +205,16 @@ max-ping-out-of-flying: 1000
 # This prevents high latency players from being able to use 1 firework boost with an elytra forever.
 max-ping-firework-boost: 1000
 
+lag-mitigation:
+    enable: false
+    # Sets the maximum number of predicted ticks. A higher value can compensate for more lag,
+    # but the predicted position may become less accurate.
+    # It is recommended to set this to a realistic value to prevent abuse.
+    max-predict-ticks: 4
+    max-predict-sprint-ticks: 1
+    enable-velocity-compensation: false
+    enable-blink-compensation: false
+    # If enabled, Grim will send movement packets at a higher tick rate to the client. (10pps -> 20pps)
+    increase-tick-rate: false
+
 config-version: 9

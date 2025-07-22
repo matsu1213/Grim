@@ -23,6 +23,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
+
 public class PlayerCompensationRunner extends Check implements PacketCheck {
     private boolean enabled = false;
     private int maxPredictTicks = 4;
@@ -31,7 +32,7 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
     private boolean enableBlinkCompensation = false;
     private boolean increaseTickRate = false;
 
-    private final AtomicBoolean processing = new AtomicBoolean();
+    final AtomicBoolean processing = new AtomicBoolean(false);
 
     public PlayerCompensationRunner(GrimPlayer player) {
         super(player);
@@ -51,7 +52,6 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
     @Override
     public void onPacketSend(final PacketSendEvent event) {
         if (!enabled) return;
-        if (processing.get()) return;
 
         try {
             if (event.getPacketType() == PacketType.Play.Server.ENTITY_MOVEMENT) {
@@ -84,7 +84,7 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
 
     public void tick() {
         if (!enabled) return;
-        if (!enableBlinkCompensation && !increaseTickRate) return;
+        if (!increaseTickRate) return;
 
         player.compensatedEntities.entityMap.forEach((id, entity) -> {
             if (entity.type.equals(EntityTypes.PLAYER)) {
@@ -95,8 +95,11 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
 
     public void sendPositionUpdate(@Nullable PacketSendEvent event, int targetEntityId, @Nullable Float yaw, @Nullable Float pitch) {
         if (!enabled) return;
-        if (processing.get()) return;
         if (event != null && event.isCancelled()) return;
+        if (processing.get()) {
+            processing.set(false);
+            return;
+        }
 
         PacketEntity entity = player.compensatedEntities.getEntity(targetEntityId);
         if (entity == null) return;
@@ -108,18 +111,18 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
         GrimPlayer targetPlayer = GrimAPI.INSTANCE.getPlayerDataManager().getPlayer(targetEntityId);
         if (targetPlayer == null) return;
 
-        // if the player is exempted, we should not cancel the packet
-        if (increaseTickRate && event != null) {
-            event.setCancelled(true);
-            return;
-        }
-
         int targetPing = targetPlayer.getTransactionPing();
         int playerPing = player.getTransactionPing();
         int ticks = Math.min((targetPing + playerPing) / 100, maxPredictTicks);
 
         Pair<Vector3dm, Boolean> predicted = targetPlayer.compensatedPlayer.getPredictedPosition(ticks);
         if (predicted == null) return;
+
+        // if the player is exempted, we should not cancel the packet
+        if (increaseTickRate && event != null) {
+            event.setCancelled(true);
+            return;
+        }
 
         Vector3dm predictedPos = predicted.first();
         boolean predictedGround = predicted.second();
@@ -141,12 +144,13 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
         if (event != null) {
             event.setCancelled(true);
         }
-        processing.set(true);
 
         if (yaw == null || pitch == null) {
             yaw = targetPlayer.xRot;
             pitch = targetPlayer.yRot;
         }
+
+        processing.set(true);
 
         if (!relative) {
             if (!near) {
@@ -164,8 +168,6 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
         } else {
             player.user.sendPacket(new WrapperPlayServerEntityRelativeMoveAndRotation(targetEntityId, delta.getX(), delta.getY(), delta.getZ(), yaw, pitch, predictedGround));
         }
-
-        processing.set(false);
     }
 
     private Vector3d getVirtualSpringConstant(boolean onGround, int delayTicks) {
@@ -186,11 +188,11 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
 
     @Override
     public void onReload(ConfigManager config) {
-        this.enabled = config.getBooleanElse("LagMitigation.enable", false);
-        this.maxPredictTicks = config.getIntElse("LagMitigation.maxPredictTicks", 4);
-        this.maxPredictSprintTicks = config.getIntElse("LagMitigation.maxPredictSprintTicks", 1);
-        this.enableVelocityCompensation = config.getBooleanElse("LagMitigation.enable-velocity-compensation", true);
-        this.enableBlinkCompensation = config.getBooleanElse("LagMitigation.enable-blink-compensation", false);
-        this.increaseTickRate = config.getBooleanElse("LagMitigation.increase-tick-rate", false);
+        this.enabled = config.getBooleanElse("lag-mitigation.enable", false);
+        this.maxPredictTicks = config.getIntElse("lag-mitigation.max-predict-ticks", 4);
+        this.maxPredictSprintTicks = config.getIntElse("lag-mitigation.max-predict-sprint-ticks", 1);
+        this.enableVelocityCompensation = config.getBooleanElse("lag-mitigation.enable-velocity-compensation", false);
+        this.enableBlinkCompensation = config.getBooleanElse("lag-mitigation.enable-blink-compensation", false);
+        this.increaseTickRate = config.getBooleanElse("lag-mitigation.increase-tick-rate", false);
     }
 }
