@@ -2,6 +2,7 @@ package ac.grim.grimac.utils.latency;
 
 import ac.grim.grimac.player.GrimPlayer;
 import ac.grim.grimac.utils.collisions.datatypes.SimpleCollisionBox;
+import ac.grim.grimac.utils.data.CompensationVelocityData;
 import ac.grim.grimac.utils.data.KnownInput;
 import ac.grim.grimac.utils.data.Pair;
 import ac.grim.grimac.utils.math.Vector3dm;
@@ -10,19 +11,35 @@ import ac.grim.grimac.utils.nmsutil.GetBoundingBox;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
 
 // This class is used to predict and compensate positions for latency.
 public class CompensatedPlayer {
+    private boolean compensateKnockback = false;
+
     GrimPlayer player;
     private final ArrayList<Pair<Vector3dm, Boolean>> predictedPositions = new ArrayList<>();
+
+    private boolean async = false;
+    private List<CompensationVelocityData> pendingKnockback = new ArrayList<>();
+    private Vector3dm syncPos = new Vector3dm(0, 0, 0);
+    private Vector3dm asyncPos = new Vector3dm(0, 0, 0);
+    private Vector3dm asyncVelocity = new Vector3dm(0, 0, 0);
+    private boolean asyncGround = false;
 
     public CompensatedPlayer(GrimPlayer player) {
         this.player = player;
     }
 
-    public void doMiniPrediction(int maxTicksAhead, int maxTicksSprintAhead, boolean velocityCompensate) {
+    public void doMiniPrediction(int maxTicksAhead, int maxTicksSprintAhead, double moveMultiplier, boolean compensateKnockback) {
         predictedPositions.clear();
+        this.compensateKnockback = compensateKnockback;
+
+        if (async && pendingKnockback.isEmpty()) {
+            //player.sendMessage("resync");
+            async = false;
+        }
 
         Vector3dm p = new Vector3dm(player.x, player.y, player.z);
         Vector3dm v = new Vector3dm(player.x - player.lastX, player.y - player.lastY, player.z - player.lastZ);
@@ -31,29 +48,59 @@ public class CompensatedPlayer {
         boolean sprinting = player.isSprinting;
         KnownInput input = player.packetStateData.knownInput;
 
+        if (async) {
+            p = asyncPos;
+            v = asyncVelocity;
+            onGround = asyncGround;
+        } else {
+            // if we are not doing async prediction, we will use the current position and velocity
+            syncPos = new Vector3dm(player.x, player.y, player.z);
+        }
+
         for (int i = 0; i < maxTicksAhead + 1; i++) {
             predictedPositions.add(new Pair<>(new Vector3dm(p.getX(), p.getY(), p.getZ()), onGround));
+
+            // we will use predicted position in the next tick for async prediction
+            if (i == 1 && async) {
+                asyncPos = new Vector3dm(p.getX(), p.getY(), p.getZ());
+                asyncVelocity = new Vector3dm(v.getX(), v.getY(), v.getZ());
+                asyncGround = onGround;
+            }
+
+            if (async) {
+                Iterator<CompensationVelocityData> iterator = pendingKnockback.iterator();
+                while (iterator.hasNext()) {
+                    CompensationVelocityData data = iterator.next();
+                    if (data.delayTicks == i + 1) {
+                        v.add(data.vector);
+                        data.delayTicks--;
+                        if (data.delayTicks == 0) {
+                            iterator.remove();
+                        }
+                    }
+                }
+            }
 
             // end of tick
             if (lastOnGround) {
                 if (v.getX() != 0) {
-                    v.setX(v.getX() * 0.6 * 0.91);
+                    v.setX(v.getX() * 0.6 * moveMultiplier);
                 }
                 if (v.getY() != 0) {
-                    v = v.setY((v.getY() - 0.08) * 0.98);
+                    v.setY((v.getY() - 0.08) * 0.98);
                 }
                 if (v.getZ() != 0) {
-                    v.setZ(v.getZ() * 0.6 * 0.91);
+                    v.setZ(v.getZ() * 0.6 * moveMultiplier);
                 }
             } else {
                 if(v.getX() != 0) {
-                    v.setX(v.getX() * 0.91);
+                    v.setX(v.getX() * moveMultiplier);
                 }
                 if (v.getY() != 0) {
-                    v = v.setY((v.getY() - 0.08) * 0.98);
+                    v.setY((v.getY() - 0.08) * 0.98);
                 }
                 if (v.getZ() != 0) {
-                    v.setZ(v.getZ() * 0.91);
+                    v.setZ(v.getZ() * moveMultiplier);
                 }
             }
 
@@ -90,5 +137,15 @@ public class CompensatedPlayer {
             return null;
         }
         return predictedPositions.get(ticksAhead);
+    }
+
+    public void addPendingKnockback(int transaction, Vector3dm kb) {
+        if (!compensateKnockback) return;
+
+        pendingKnockback.add(new CompensationVelocityData(transaction, kb, player.getTransactionPing() / 100));
+        if (!async) {
+            //player.sendMessage("async");
+        }
+        async = true;
     }
 }

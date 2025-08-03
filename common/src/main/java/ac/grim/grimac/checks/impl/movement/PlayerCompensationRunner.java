@@ -28,7 +28,8 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
     private boolean enabled = false;
     private int maxPredictTicks = 4;
     private int maxPredictSprintTicks = 1;
-    private boolean enableVelocityCompensation = true;
+    private double moveMultiplier = 0.91;
+    private boolean enableKnockbackCompensation = true;
     private boolean enableBlinkCompensation = false;
     private boolean increaseTickRate = false;
 
@@ -45,7 +46,7 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
         if (WrapperPlayClientPlayerFlying.isFlying(event.getPacketType())
                 && !player.packetStateData.lastPacketWasOnePointSeventeenDuplicate
                 && player.getSetbackTeleportUtil().hasAcceptedSpawnTeleport) {
-            player.compensatedPlayer.doMiniPrediction(maxPredictTicks, maxPredictSprintTicks, enableVelocityCompensation);
+            player.compensatedPlayer.doMiniPrediction(maxPredictTicks, maxPredictSprintTicks, moveMultiplier, enableKnockbackCompensation);
         }
     }
 
@@ -191,7 +192,8 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
         this.enabled = config.getBooleanElse("lag-mitigation.enable", false);
         this.maxPredictTicks = config.getIntElse("lag-mitigation.max-predict-ticks", 4);
         this.maxPredictSprintTicks = config.getIntElse("lag-mitigation.max-predict-sprint-ticks", 1);
-        this.enableVelocityCompensation = config.getBooleanElse("lag-mitigation.enable-velocity-compensation", false);
+        this.moveMultiplier = config.getDoubleElse("lag-mitigation.move-multiplier", 0.91);
+        this.enableKnockbackCompensation = config.getBooleanElse("lag-mitigation.enable-knockback-compensation", false);
         this.enableBlinkCompensation = config.getBooleanElse("lag-mitigation.enable-blink-compensation", false);
         this.increaseTickRate = config.getBooleanElse("lag-mitigation.increase-tick-rate", false);
     }

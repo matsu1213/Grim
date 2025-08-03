@@ -103,6 +103,7 @@ public class KnockbackHandler extends Check implements PostPredictionCheck {
 
     private void addPlayerKnockback(int entityID, int breadOne, Vector3dm knockback) {
         firstBreadMap.add(new VelocityData(entityID, breadOne, player.getSetbackTeleportUtil().isSendingSetback, knockback));
+        player.compensatedPlayer.addPendingKnockback(breadOne, knockback);
     }
 
     public VelocityData calculateRequiredKB(int entityID, int transaction, boolean isJustTesting) {

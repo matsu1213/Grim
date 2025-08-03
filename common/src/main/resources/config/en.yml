@@ -205,16 +205,19 @@ max-ping-out-of-flying: 1000
 # This prevents high latency players from being able to use 1 firework boost with an elytra forever.
 max-ping-firework-boost: 1000
 
+# This is not a check, but mitigation for laggy players.
 lag-mitigation:
     enable: false
-    # Sets the maximum number of predicted ticks. A higher value can compensate for more lag,
-    # but the predicted position may become less accurate.
-    # It is recommended to set this to a realistic value to prevent abuse.
+    # Defines the maximum number of ticks to predict movement. Higher values can handle more lag but may reduce prediction accuracy.
+    # Set a reasonable value to avoid potential misuse.
     max-predict-ticks: 4
     max-predict-sprint-ticks: 1
-    enable-velocity-compensation: false
+    # Adjusts the player's movement speed multiplier. The default is 0.91 (vanilla). Higher values can offset more lag but may lead to less precise movement.
+    move-multiplier: 0.91
+    # When enabled, Grim adjusts for knockback, though this might affect movement accuracy.
+    enable-knockback-compensation: false
     enable-blink-compensation: false
-    # If enabled, Grim will send movement packets at a higher tick rate to the client. (10pps -> 20pps)
+    # When enabled, Grim sends movement packets to the client at a higher rate (from 10pps to 20pps).
     increase-tick-rate: false
 
 config-version: 9
