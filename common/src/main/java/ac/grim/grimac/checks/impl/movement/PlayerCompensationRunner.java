@@ -98,7 +98,7 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
             if (enableBlinkCompensation) {
                 if (shouldPredict) {
                     if (!player.compensatedPlayer.async) {
-                        player.sendMessage("async");
+                        //player.sendMessage("async");
                         for (int i = 0; i < MIN_PREDICT_ASYNC_TICKS; i++) {
                             player.compensatedPlayer.doMiniPrediction(maxPredictTicks, maxPredictSprintTicks, moveMultiplier, enableKnockbackCompensation);
                         }
@@ -107,7 +107,7 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
                     player.compensatedPlayer.doMiniPrediction(maxPredictTicks, maxPredictSprintTicks, moveMultiplier, enableKnockbackCompensation);
                 } else if (!player.compensatedPlayer.isPendingKnockback()){
                     if (player.compensatedPlayer.async) {
-                        player.sendMessage("resync");
+                        //player.sendMessage("resync");
                     }
                     player.compensatedPlayer.async = false;
                 }
@@ -116,14 +116,14 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
         } else if (enableBlinkCompensation) {
             if (shouldPredict) {
                 if (!player.compensatedPlayer.async) {
-                    player.sendMessage("async");
+                    //player.sendMessage("async");
                 }
                 player.compensatedPlayer.async = true;
                 player.compensatedPlayer.doMiniPrediction(maxPredictTicks, maxPredictSprintTicks, moveMultiplier, enableKnockbackCompensation);
                 updateNearby();
             } else if (!player.compensatedPlayer.isPendingKnockback()){
                 if (player.compensatedPlayer.async) {
-                    player.sendMessage("resync");
+                    //.sendMessage("resync");
                 }
                 player.compensatedPlayer.async = false;
             }

@@ -69,7 +69,7 @@ public class CompensatedPlayer {
                             iterator.remove();
                             if (pendingKnockback.isEmpty()) {
                                 async = false;
-                                player.sendMessage("resync");
+                                //player.sendMessage("resync");
                             }
                         }
                     }
@@ -139,7 +139,7 @@ public class CompensatedPlayer {
 
         pendingKnockback.add(new CompensationVelocityData(transaction, kb, player.getTransactionPing() / 100));
         if (!async) {
-            player.sendMessage("async");
+            //player.sendMessage("async");
         }
         async = true;
     }
