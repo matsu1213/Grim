@@ -31,9 +31,13 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
     private double moveMultiplier = 0.91;
     private boolean enableKnockbackCompensation = true;
     private boolean enableBlinkCompensation = false;
+    private int maxBlinkPredictTicks = 10;
     private boolean increaseTickRate = false;
 
+    private static final int MIN_PREDICT_ASYNC_TICKS = 2;
+
     final AtomicBoolean processing = new AtomicBoolean(false);
+    private int lastFlyingTick = -1;
 
     public PlayerCompensationRunner(GrimPlayer player) {
         super(player);
@@ -47,6 +51,7 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
                 && !player.packetStateData.lastPacketWasOnePointSeventeenDuplicate
                 && player.getSetbackTeleportUtil().hasAcceptedSpawnTeleport) {
             player.compensatedPlayer.doMiniPrediction(maxPredictTicks, maxPredictSprintTicks, moveMultiplier, enableKnockbackCompensation);
+            lastFlyingTick = GrimAPI.INSTANCE.getTickManager().currentTick;
         }
     }
 
@@ -85,13 +90,44 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
 
     public void tick() {
         if (!enabled) return;
-        if (!increaseTickRate) return;
+        int currentTick = GrimAPI.INSTANCE.getTickManager().currentTick;
+        boolean shouldPredict = enableBlinkCompensation && player.actualMovement.lengthSquared() > 0.05 // could skip tick?
+                && currentTick > lastFlyingTick + MIN_PREDICT_ASYNC_TICKS && currentTick - lastFlyingTick < maxBlinkPredictTicks;
 
-        player.compensatedEntities.entityMap.forEach((id, entity) -> {
-            if (entity.type.equals(EntityTypes.PLAYER)) {
-                sendPositionUpdate(null, id, null, null);
+        if (increaseTickRate) {
+            if (enableBlinkCompensation) {
+                if (shouldPredict) {
+                    if (!player.compensatedPlayer.async) {
+                        player.sendMessage("async");
+                        for (int i = 0; i < MIN_PREDICT_ASYNC_TICKS; i++) {
+                            player.compensatedPlayer.doMiniPrediction(maxPredictTicks, maxPredictSprintTicks, moveMultiplier, enableKnockbackCompensation);
+                        }
+                    }
+                    player.compensatedPlayer.async = true;
+                    player.compensatedPlayer.doMiniPrediction(maxPredictTicks, maxPredictSprintTicks, moveMultiplier, enableKnockbackCompensation);
+                } else if (!player.compensatedPlayer.isPendingKnockback()){
+                    if (player.compensatedPlayer.async) {
+                        player.sendMessage("resync");
+                    }
+                    player.compensatedPlayer.async = false;
+                }
             }
-        });
+            updateNearby();
+        } else if (enableBlinkCompensation) {
+            if (shouldPredict) {
+                if (!player.compensatedPlayer.async) {
+                    player.sendMessage("async");
+                }
+                player.compensatedPlayer.async = true;
+                player.compensatedPlayer.doMiniPrediction(maxPredictTicks, maxPredictSprintTicks, moveMultiplier, enableKnockbackCompensation);
+                updateNearby();
+            } else if (!player.compensatedPlayer.isPendingKnockback()){
+                if (player.compensatedPlayer.async) {
+                    player.sendMessage("resync");
+                }
+                player.compensatedPlayer.async = false;
+            }
+        }
     }
 
     public void sendPositionUpdate(@Nullable PacketSendEvent event, int targetEntityId, @Nullable Float yaw, @Nullable Float pitch) {
@@ -171,6 +207,14 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
         }
     }
 
+    public void updateNearby() {
+        player.compensatedEntities.entityMap.forEach((id, entity) -> {
+            if (entity.type.equals(EntityTypes.PLAYER)) {
+                sendPositionUpdate(null, id, null, null);
+            }
+        });
+    }
+
     private Vector3d getVirtualSpringConstant(boolean onGround, int delayTicks) {
         double x = 1.0 + delayTicks * 0.04;
         double y = (onGround ? 1 : 1.05);
@@ -195,6 +239,7 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
         this.moveMultiplier = config.getDoubleElse("lag-mitigation.move-multiplier", 0.91);
         this.enableKnockbackCompensation = config.getBooleanElse("lag-mitigation.enable-knockback-compensation", false);
         this.enableBlinkCompensation = config.getBooleanElse("lag-mitigation.enable-blink-compensation", false);
+        this.maxBlinkPredictTicks = config.getIntElse("lag-mitigation.max-blink-predict-ticks", 10);
         this.increaseTickRate = config.getBooleanElse("lag-mitigation.increase-tick-rate", false);
     }
 }

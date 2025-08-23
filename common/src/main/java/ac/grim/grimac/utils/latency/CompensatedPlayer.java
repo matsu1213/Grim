@@ -21,7 +21,7 @@ public class CompensatedPlayer {
     GrimPlayer player;
     private final ArrayList<Pair<Vector3dm, Boolean>> predictedPositions = new ArrayList<>();
 
-    private boolean async = false;
+    public boolean async = false;
     private List<CompensationVelocityData> pendingKnockback = new ArrayList<>();
     private Vector3dm syncPos = new Vector3dm(0, 0, 0);
     private Vector3dm asyncPos = new Vector3dm(0, 0, 0);
@@ -36,32 +36,23 @@ public class CompensatedPlayer {
         predictedPositions.clear();
         this.compensateKnockback = compensateKnockback;
 
-        if (async && pendingKnockback.isEmpty()) {
-            //player.sendMessage("resync");
-            async = false;
-        }
+        //if (async && pendingKnockback.isEmpty()) {
+        //    //player.sendMessage("resync");
+        //    async = false;
+        //}
 
-        Vector3dm p = new Vector3dm(player.x, player.y, player.z);
-        Vector3dm v = new Vector3dm(player.x - player.lastX, player.y - player.lastY, player.z - player.lastZ);
-        boolean onGround = player.onGround;
+        Vector3dm p = async ? asyncPos : new Vector3dm(player.x, player.y, player.z);
+        Vector3dm v = async ? asyncVelocity : new Vector3dm(player.x - player.lastX, player.y - player.lastY, player.z - player.lastZ);
+        boolean onGround = async ? asyncGround : player.onGround;
         boolean lastOnGround = player.lastOnGround;
         boolean sprinting = player.isSprinting;
         KnownInput input = player.packetStateData.knownInput;
-
-        if (async) {
-            p = asyncPos;
-            v = asyncVelocity;
-            onGround = asyncGround;
-        } else {
-            // if we are not doing async prediction, we will use the current position and velocity
-            syncPos = new Vector3dm(player.x, player.y, player.z);
-        }
 
         for (int i = 0; i < maxTicksAhead + 1; i++) {
             predictedPositions.add(new Pair<>(new Vector3dm(p.getX(), p.getY(), p.getZ()), onGround));
 
             // we will use predicted position in the next tick for async prediction
-            if (i == 1 && async) {
+            if (i == 1) {
                 asyncPos = new Vector3dm(p.getX(), p.getY(), p.getZ());
                 asyncVelocity = new Vector3dm(v.getX(), v.getY(), v.getZ());
                 asyncGround = onGround;
@@ -76,6 +67,10 @@ public class CompensatedPlayer {
                         data.delayTicks--;
                         if (data.delayTicks == 0) {
                             iterator.remove();
+                            if (pendingKnockback.isEmpty()) {
+                                async = false;
+                                player.sendMessage("resync");
+                            }
                         }
                     }
                 }
@@ -144,8 +139,12 @@ public class CompensatedPlayer {
 
         pendingKnockback.add(new CompensationVelocityData(transaction, kb, player.getTransactionPing() / 100));
         if (!async) {
-            //player.sendMessage("async");
+            player.sendMessage("async");
         }
         async = true;
+    }
+
+    public boolean isPendingKnockback() {
+        return !pendingKnockback.isEmpty();
     }
 }
