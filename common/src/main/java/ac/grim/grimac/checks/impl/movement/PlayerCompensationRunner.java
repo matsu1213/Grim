@@ -6,6 +6,7 @@ import ac.grim.grimac.checks.Check;
 import ac.grim.grimac.checks.type.PacketCheck;
 import ac.grim.grimac.player.GrimPlayer;
 import ac.grim.grimac.utils.data.Pair;
+import ac.grim.grimac.utils.data.SetBackData;
 import ac.grim.grimac.utils.data.TrackerData;
 import ac.grim.grimac.utils.data.packetentity.PacketEntity;
 import ac.grim.grimac.utils.math.Vector3dm;
@@ -21,6 +22,7 @@ import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPl
 import com.github.retrooper.packetevents.wrapper.play.server.*;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 
@@ -36,7 +38,7 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
 
     private static final int MIN_PREDICT_ASYNC_TICKS = 2;
 
-    final AtomicBoolean processing = new AtomicBoolean(false);
+    final ConcurrentHashMap<Integer, AtomicBoolean> processing = new ConcurrentHashMap<>();
     private int lastFlyingTick = -1;
 
     public PlayerCompensationRunner(GrimPlayer player) {
@@ -82,6 +84,11 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
             } else if (event.getPacketType() == PacketType.Play.Server.ENTITY_ROTATION) {
                 WrapperPlayServerEntityRotation packet = new WrapperPlayServerEntityRotation(event);
                 sendPositionUpdate(event, packet.getEntityId(), packet.getYaw(), packet.getPitch());
+            } else if (event.getPacketType() == PacketType.Play.Server.DESTROY_ENTITIES) {
+                WrapperPlayServerDestroyEntities packet = new WrapperPlayServerDestroyEntities(event);
+                for (int entityId : packet.getEntityIds()) {
+                    processing.remove(entityId);
+                }
             }
         }catch (Exception e) {
             e.printStackTrace();
@@ -133,20 +140,23 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
     public void sendPositionUpdate(@Nullable PacketSendEvent event, int targetEntityId, @Nullable Float yaw, @Nullable Float pitch) {
         if (!enabled) return;
         if (event != null && event.isCancelled()) return;
-        if (processing.get()) {
-            processing.set(false);
-            return;
-        }
 
         PacketEntity entity = player.compensatedEntities.getEntity(targetEntityId);
         if (entity == null) return;
         if (!entity.type.equals(EntityTypes.PLAYER)) return;
+
+        AtomicBoolean isProcessing = processing.computeIfAbsent(targetEntityId, id -> new AtomicBoolean(false));
+        if (isProcessing.getAndSet(false)) {
+            return;
+        }
 
         TrackerData lastPos = player.compensatedEntities.getTrackedEntity(targetEntityId);
         if (lastPos == null) return;
 
         GrimPlayer targetPlayer = GrimAPI.INSTANCE.getPlayerDataManager().getPlayer(targetEntityId);
         if (targetPlayer == null) return;
+
+        if (!targetPlayer.getSetbackTeleportUtil().hasAcceptedSpawnTeleport) return;
 
         int targetPing = targetPlayer.getTransactionPing();
         int playerPing = player.getTransactionPing();
@@ -187,7 +197,7 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
             pitch = targetPlayer.yRot;
         }
 
-        processing.set(true);
+        processing.get(targetEntityId).set(true);
 
         if (!relative) {
             if (!near) {
@@ -229,6 +239,13 @@ public class PlayerCompensationRunner extends Check implements PacketCheck {
         double z = delayTicks * 0.1;
 
         return new Vector3d(x, y, z);
+    }
+
+    private boolean isTeleportingAway(GrimPlayer target) {
+        SetBackData targetSetback = target.getSetbackTeleportUtil().getRequiredSetBack();
+        return targetSetback != null
+                && !targetSetback.isComplete()
+                && targetSetback.getTeleportData().getLocation().distanceSquared(target.getSetbackTeleportUtil().lastKnownGoodPosition.getPos()) > 64; // 8 blocks
     }
 
     @Override
